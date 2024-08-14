@@ -6,9 +6,10 @@ require (
 	github.com/microsoft/kiota-abstractions-go v1.6.1
 	github.com/microsoft/kiota-http-go v1.4.3
 	github.com/microsoft/kiota-serialization-form-go v1.0.0
-	github.com/microsoft/kiota-serialization-json-go v1.0.7
+	github.com/microsoft/kiota-serialization-json-go v1.0.8
 	github.com/microsoft/kiota-serialization-multipart-go v1.0.0
 	github.com/microsoft/kiota-serialization-text-go v1.0.0
+	github.com/stretchr/testify v1.9.0
 )
 
 require (
@@ -19,7 +20,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/std-uritemplate/std-uritemplate/go v0.0.57 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	go.opentelemetry.io/otel v1.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.24.0 // indirect
 	go.opentelemetry.io/otel/trace v1.24.0 // indirect
