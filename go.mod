@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/microsoft/kiota-abstractions-go v1.6.1
-	github.com/microsoft/kiota-http-go v1.4.3
+	github.com/microsoft/kiota-http-go v1.4.4
 	github.com/microsoft/kiota-serialization-form-go v1.0.0
 	github.com/microsoft/kiota-serialization-json-go v1.0.8
 	github.com/microsoft/kiota-serialization-multipart-go v1.0.0
