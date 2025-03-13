@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.3.0...v1.4.0) (2025-03-13)
+
+
+### Features
+
+* upgrades required go version from go1.18 to go 1.22 ([1f1a1c9](https://github.com/microsoft/kiota-bundle-go/commit/1f1a1c9c51ab9594ad25d3a3e6af6e3a9287705e))
+
 ## [1.3.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.2.1...v1.3.0) (2024-12-18)
 
 
