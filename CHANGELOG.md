@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.0...v1.4.1) (2025-03-24)
+
+
+### Bug Fixes
+
+* upgrades common go dependency to solve triming issues ([b888064](https://github.com/microsoft/kiota-bundle-go/commit/b88806480239f975662cc21847bf4657c96510d1))
+* upgrades common go dependency to solve triming issues ([f60c9ff](https://github.com/microsoft/kiota-bundle-go/commit/f60c9ffe515bd20d389c5fa4e7cac1f3789672b3))
+
 ## [1.4.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.3.0...v1.4.0) (2025-03-13)
 
 
