@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.2](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.1...v1.4.2) (2025-04-02)
+
+
+### Bug Fixes
+
+* removes common go dependency ([02a02b9](https://github.com/microsoft/kiota-bundle-go/commit/02a02b96688f9cdcad79d516d5c6ae5a800fbd8d))
+* removes common go dependency ([5270831](https://github.com/microsoft/kiota-bundle-go/commit/5270831774bc57d82e295af62fc0fe5c608ad3bf))
+
 ## [1.4.1](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.0...v1.4.1) (2025-03-24)
 
 
