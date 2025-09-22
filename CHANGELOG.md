@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.2...v1.4.3) (2025-09-22)
+
+
+### Bug Fixes
+
+* testify was being pulled in production bundles ([4f8a3e0](https://github.com/microsoft/kiota-bundle-go/commit/4f8a3e030c43f60506254447ce7bbb3e9faa820c))
+
 ## [1.4.2](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.1...v1.4.2) (2025-04-02)
 
 
