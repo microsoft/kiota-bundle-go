@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.4](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.3...v1.4.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **bundle:** ensure thread-safe default registration and initialize defaults before adapter setup ([2876c40](https://github.com/microsoft/kiota-bundle-go/commit/2876c40178e2a2a78df6b13f53408fa286bd4245))
+* **bundle:** ensure thread-safe single default serialization registration and initialize defaults before adapter setup ([5559e27](https://github.com/microsoft/kiota-bundle-go/commit/5559e2718c3a09fb3fffc52a3d4fecfe06285970))
+
 ## [1.4.3](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.2...v1.4.3) (2025-09-22)
 
 
