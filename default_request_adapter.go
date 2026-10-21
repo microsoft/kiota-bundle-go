@@ -3,6 +3,7 @@ package bundle
 import (
 	"errors"
 	nethttp "net/http"
+	"sync"
 
 	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
@@ -39,6 +40,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if authenticationProvider == nil {
 		return nil, errors.New("authenticationProvider cannot be nil")
 	}
+	setupDefaults()
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
@@ -56,31 +58,33 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 		NetHttpRequestAdapter: *defaultAdapter,
 	}
 
-	setupDefaults()
-
 	return result, nil
 }
 
+var setupDefaultsOnce sync.Once
+
 func setupDefaults() {
-	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-		return serjson.NewJsonSerializationWriterFactory()
-	})
-	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-		return sertext.NewTextSerializationWriterFactory()
-	})
-	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-		return serform.NewFormSerializationWriterFactory()
-	})
-	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-		return sermultipart.NewMultipartSerializationWriterFactory()
-	})
-	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-		return serjson.NewJsonParseNodeFactory()
-	})
-	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-		return sertext.NewTextParseNodeFactory()
-	})
-	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-		return serform.NewFormParseNodeFactory()
+	setupDefaultsOnce.Do(func() {
+		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+			return serjson.NewJsonSerializationWriterFactory()
+		})
+		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+			return sertext.NewTextSerializationWriterFactory()
+		})
+		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+			return serform.NewFormSerializationWriterFactory()
+		})
+		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+			return sermultipart.NewMultipartSerializationWriterFactory()
+		})
+		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+			return serjson.NewJsonParseNodeFactory()
+		})
+		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+			return sertext.NewTextParseNodeFactory()
+		})
+		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+			return serform.NewFormParseNodeFactory()
+		})
 	})
 }
