@@ -37,10 +37,15 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(a
 
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient creates a new DefaultRequestAdapter with the given parameters
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client) (*DefaultRequestAdapter, error) {
+	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, khttp.ObservabilityOptions{})
+}
+
+// NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions creates a new DefaultRequestAdapter with the given parameters including observability options
+func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client, observabilityOptions khttp.ObservabilityOptions) (*DefaultRequestAdapter, error) {
 	if authenticationProvider == nil {
 		return nil, errors.New("authenticationProvider cannot be nil")
 	}
-	setupDefaults()
+	SetupDefaults()
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
@@ -50,9 +55,12 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if parseNodeFactory == nil {
 		parseNodeFactory = absser.DefaultParseNodeFactoryInstance
 	}
-	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient)
+	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
 	if err != nil {
 		return nil, err
+	}
+	if defaultAdapter == nil {
+		return nil, errors.New("failed to initialize request adapter")
 	}
 	result := &DefaultRequestAdapter{
 		NetHttpRequestAdapter: *defaultAdapter,
@@ -62,6 +70,12 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 }
 
 var setupDefaultsOnce sync.Once
+
+// SetupDefaults registers the default serializers and deserializers in the global registries.
+// It is thread-safe and executes only once.
+func SetupDefaults() {
+	setupDefaults()
+}
 
 func setupDefaults() {
 	setupDefaultsOnce.Do(func() {

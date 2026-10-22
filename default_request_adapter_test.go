@@ -7,6 +7,7 @@ import (
 
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
+	khttp "github.com/microsoft/kiota-http-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,6 +25,9 @@ func TestAdapterThrowsErrorOnNilAuthProviderAcrossConstructors(t *testing.T) {
 
 	_, err3 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(nil, nil, nil, nil)
 	assert.Error(t, err3)
+
+	_, err4 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(nil, nil, nil, nil, khttp.ObservabilityOptions{})
+	assert.Error(t, err4)
 }
 
 func TestAerializersAreRegisteredAsExpected(t *testing.T) {
@@ -114,4 +118,15 @@ func TestNewDefaultRequestAdapterWithCustomFactories(t *testing.T) {
 	adapter3, err3 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authProvider, absser.DefaultParseNodeFactoryInstance, absser.DefaultSerializationWriterFactoryInstance, customClient)
 	assert.NoError(t, err3)
 	assert.NotNil(t, adapter3)
+
+	obsOptions := khttp.ObservabilityOptions{}
+	adapter4, err4 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authProvider, absser.DefaultParseNodeFactoryInstance, absser.DefaultSerializationWriterFactoryInstance, customClient, obsOptions)
+	assert.NoError(t, err4)
+	assert.NotNil(t, adapter4)
+}
+
+func TestSetupDefaultsExported(t *testing.T) {
+	SetupDefaults()
+	assert.Equal(t, 4, len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories))
+	assert.Equal(t, 3, len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories))
 }
