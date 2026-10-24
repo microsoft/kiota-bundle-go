@@ -115,3 +115,56 @@ func TestNewDefaultRequestAdapterWithCustomFactories(t *testing.T) {
 	assert.NoError(t, err3)
 	assert.NotNil(t, adapter3)
 }
+
+
+func TestAdapterConstructorsWithHttpClientAndSerializationWriterFactory(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	customClient := &nethttp.Client{}
+
+	// With custom HttpClient
+	adapter1, err1 := NewDefaultRequestAdapterWithHttpClient(authProvider, customClient)
+	assert.NoError(t, err1)
+	assert.NotNil(t, adapter1)
+	assert.Equal(t, customClient, adapter1.GetHttpClient())
+	assert.NotNil(t, adapter1.GetParseNodeFactory())
+	assert.NotNil(t, adapter1.GetSerializationWriterFactory())
+
+	// With custom SerializationWriterFactory
+	adapter2, err2 := NewDefaultRequestAdapterWithSerializationWriterFactory(authProvider, absser.DefaultSerializationWriterFactoryInstance)
+	assert.NoError(t, err2)
+	assert.NotNil(t, adapter2)
+	assert.Equal(t, absser.DefaultSerializationWriterFactoryInstance, adapter2.GetSerializationWriterFactory())
+	assert.NotNil(t, adapter2.GetHttpClient())
+	assert.NotNil(t, adapter2.GetParseNodeFactory())
+
+	// Throws on nil authProvider
+	_, errNil1 := NewDefaultRequestAdapterWithHttpClient(nil, customClient)
+	assert.Error(t, errNil1)
+
+	_, errNil2 := NewDefaultRequestAdapterWithSerializationWriterFactory(nil, absser.DefaultSerializationWriterFactoryInstance)
+	assert.Error(t, errNil2)
+}
+
+func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Accessors on valid adapter
+	assert.NotNil(t, adapter.GetHttpClient())
+	assert.NotNil(t, adapter.GetParseNodeFactory())
+	assert.NotNil(t, adapter.GetSerializationWriterFactory())
+	assert.Equal(t, "", adapter.GetBaseUrl())
+
+	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
+	assert.Equal(t, "https://graph.microsoft.com/v1.0", adapter.GetBaseUrl())
+
+	// Accessors on nil adapter should not panic
+	var nilAdapter *DefaultRequestAdapter
+	assert.Nil(t, nilAdapter.GetHttpClient())
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
+	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+	assert.Equal(t, "", nilAdapter.GetBaseUrl())
+	nilAdapter.SetBaseUrl("https://example.com") // no-op, shouldn't panic
+}
