@@ -15,9 +15,13 @@ import (
 	sertext "github.com/microsoft/kiota-serialization-text-go"
 )
 
+var _ abs.RequestAdapter = (*DefaultRequestAdapter)(nil)
+
 // DefaultRequestAdapter is the core service used by GraphServiceClient to make requests to Microsoft Graph.
 type DefaultRequestAdapter struct {
 	khttp.NetHttpRequestAdapter
+	parseNodeFactory absser.ParseNodeFactory
+	httpClient       *nethttp.Client
 }
 
 // NewDefaultRequestAdapter creates a new DefaultRequestAdapter with the given parameters
@@ -28,6 +32,16 @@ func NewDefaultRequestAdapter(authenticationProvider absauth.AuthenticationProvi
 // NewDefaultRequestAdapterWithParseNodeFactory creates a new DefaultRequestAdapter with the given parameters
 func NewDefaultRequestAdapterWithParseNodeFactory(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory) (*DefaultRequestAdapter, error) {
 	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authenticationProvider, parseNodeFactory, nil)
+}
+
+// NewDefaultRequestAdapterWithSerializationWriterFactory creates a new DefaultRequestAdapter with the given parameters
+func NewDefaultRequestAdapterWithSerializationWriterFactory(authenticationProvider absauth.AuthenticationProvider, serializationWriterFactory absser.SerializationWriterFactory) (*DefaultRequestAdapter, error) {
+	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, nil, serializationWriterFactory, nil)
+}
+
+// NewDefaultRequestAdapterWithHttpClient creates a new DefaultRequestAdapter with the given authentication provider and custom HTTP client
+func NewDefaultRequestAdapterWithHttpClient(authenticationProvider absauth.AuthenticationProvider, httpClient *nethttp.Client) (*DefaultRequestAdapter, error) {
+	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, nil, nil, httpClient)
 }
 
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory creates a new DefaultRequestAdapter with the given parameters
@@ -54,11 +68,56 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if err != nil {
 		return nil, err
 	}
+	if defaultAdapter == nil {
+		return nil, errors.New("failed to initialize request adapter")
+	}
 	result := &DefaultRequestAdapter{
 		NetHttpRequestAdapter: *defaultAdapter,
+		parseNodeFactory:      parseNodeFactory,
+		httpClient:            httpClient,
 	}
 
 	return result, nil
+}
+
+// GetParseNodeFactory returns the parse node factory used by the request adapter.
+func (a *DefaultRequestAdapter) GetParseNodeFactory() absser.ParseNodeFactory {
+	if a == nil {
+		return nil
+	}
+	return a.parseNodeFactory
+}
+
+// GetHttpClient returns the HTTP client used by the request adapter.
+func (a *DefaultRequestAdapter) GetHttpClient() *nethttp.Client {
+	if a == nil {
+		return nil
+	}
+	return a.httpClient
+}
+
+// GetSerializationWriterFactory returns the serialization writer factory currently in use.
+func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.SerializationWriterFactory {
+	if a == nil {
+		return nil
+	}
+	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
+}
+
+// GetBaseUrl returns the base url for every request.
+func (a *DefaultRequestAdapter) GetBaseUrl() string {
+	if a == nil {
+		return ""
+	}
+	return a.NetHttpRequestAdapter.GetBaseUrl()
+}
+
+// SetBaseUrl sets the base url for every request.
+func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
+	if a == nil {
+		return
+	}
+	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
 }
 
 var setupDefaultsOnce sync.Once
