@@ -8,14 +8,13 @@ import (
 	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
+	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
 	serform "github.com/microsoft/kiota-serialization-form-go"
 	serjson "github.com/microsoft/kiota-serialization-json-go"
 	sermultipart "github.com/microsoft/kiota-serialization-multipart-go"
 	sertext "github.com/microsoft/kiota-serialization-text-go"
 )
-
-var _ abs.RequestAdapter = (*DefaultRequestAdapter)(nil)
 
 // DefaultRequestAdapter is the core service used by GraphServiceClient to make requests to Microsoft Graph.
 type DefaultRequestAdapter struct {
@@ -118,6 +117,17 @@ func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
 		return
 	}
 	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
+}
+
+// EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use.
+func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFactory) {
+	if a == nil {
+		return
+	}
+	a.NetHttpRequestAdapter.EnableBackingStore(factory)
+	if a.parseNodeFactory != nil {
+		a.parseNodeFactory = abs.EnableBackingStoreForParseNodeFactory(a.parseNodeFactory)
+	}
 }
 
 var setupDefaultsOnce sync.Once

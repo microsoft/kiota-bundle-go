@@ -5,8 +5,10 @@ import (
 	"sync"
 	"testing"
 
+	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
+	"github.com/microsoft/kiota-abstractions-go/store"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -167,4 +169,40 @@ func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
 	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, shouldn't panic
+}
+
+
+type mockCustomParseNodeFactory struct{}
+
+func (m *mockCustomParseNodeFactory) GetValidContentType() (string, error) {
+	return "application/custom", nil
+}
+
+func (m *mockCustomParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
+	return nil, nil
+}
+
+func TestEnableBackingStoreSynchronizesParseNodeFactory(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	customFactory := &mockCustomParseNodeFactory{}
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactory(authProvider, customFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Equal(t, customFactory, adapter.GetParseNodeFactory())
+
+	// Interface implementation verification
+	assert.Implements(t, (*abs.RequestAdapter)(nil), adapter)
+
+	// Enable backing store
+	adapter.EnableBackingStore(nil)
+
+	// After enabling backing store, parseNodeFactory should be wrapped with BackingStoreParseNodeFactory
+	backingStoreFactory, ok := adapter.GetParseNodeFactory().(*store.BackingStoreParseNodeFactory)
+	assert.True(t, ok, "parseNodeFactory should be wrapped with BackingStoreParseNodeFactory")
+	assert.NotNil(t, backingStoreFactory)
+
+	// Nil adapter check
+	var nilAdapter *DefaultRequestAdapter
+	nilAdapter.EnableBackingStore(nil) // should not panic
 }
