@@ -1,7 +1,11 @@
 package bundle
 
 import (
+	"context"
+	"io"
 	nethttp "net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
@@ -9,8 +13,23 @@ import (
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
 	"github.com/microsoft/kiota-abstractions-go/store"
+	khttp "github.com/microsoft/kiota-http-go"
 	"github.com/stretchr/testify/assert"
 )
+
+type recordingTransport struct {
+	req *nethttp.Request
+}
+
+func (t *recordingTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response, error) {
+	t.req = req
+	return &nethttp.Response{
+		StatusCode: nethttp.StatusOK,
+		Header:     make(nethttp.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
 
 func TestAdapterThrowsErrorOnNillAuthProvider(t *testing.T) {
 	_, err := NewDefaultRequestAdapter(nil)
@@ -26,6 +45,9 @@ func TestAdapterThrowsErrorOnNilAuthProviderAcrossConstructors(t *testing.T) {
 
 	_, err3 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(nil, nil, nil, nil)
 	assert.Error(t, err3)
+
+	_, err4 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(nil, nil, nil, nil, khttp.ObservabilityOptions{})
+	assert.Error(t, err4)
 }
 
 func TestAerializersAreRegisteredAsExpected(t *testing.T) {
@@ -116,35 +138,59 @@ func TestNewDefaultRequestAdapterWithCustomFactories(t *testing.T) {
 	adapter3, err3 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authProvider, absser.DefaultParseNodeFactoryInstance, absser.DefaultSerializationWriterFactoryInstance, customClient)
 	assert.NoError(t, err3)
 	assert.NotNil(t, adapter3)
+
+	recorder := &recordingTransport{}
+	clientWithTransport := &nethttp.Client{Transport: recorder}
+	obsOptions := khttp.ObservabilityOptions{
+		IncludeEUIIAttributes: true,
+	}
+	adapter4, err4 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(
+		authProvider,
+		absser.DefaultParseNodeFactoryInstance,
+		absser.DefaultSerializationWriterFactoryInstance,
+		clientWithTransport,
+		obsOptions,
+	)
+	assert.NoError(t, err4)
+	assert.NotNil(t, adapter4)
+
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://example.com")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	err = adapter4.SendNoContent(context.Background(), reqInfo, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, recorder.req)
+
+	capturedOptions := khttp.GetObservabilityOptionsFromRequest(recorder.req)
+	assert.NotNil(t, capturedOptions)
+	assert.True(t, capturedOptions.GetIncludeEUIIAttributes())
 }
 
+func TestSetupDefaultsExported(t *testing.T) {
+	// Reset registration state to ensure standalone setup is exercised
+	setupDefaultsOnce = sync.Once{}
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
-func TestAdapterConstructorsWithHttpClientAndSerializationWriterFactory(t *testing.T) {
-	authProvider := &absauth.AnonymousAuthenticationProvider{}
-	customClient := &nethttp.Client{}
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
 
-	// With custom HttpClient
-	adapter1, err1 := NewDefaultRequestAdapterWithHttpClient(authProvider, customClient)
-	assert.NoError(t, err1)
-	assert.NotNil(t, adapter1)
-	assert.Equal(t, customClient, adapter1.GetHttpClient())
-	assert.NotNil(t, adapter1.GetParseNodeFactory())
-	assert.NotNil(t, adapter1.GetSerializationWriterFactory())
+	SetupDefaults()
 
-	// With custom SerializationWriterFactory
-	adapter2, err2 := NewDefaultRequestAdapterWithSerializationWriterFactory(authProvider, absser.DefaultSerializationWriterFactoryInstance)
-	assert.NoError(t, err2)
-	assert.NotNil(t, adapter2)
-	assert.Equal(t, absser.DefaultSerializationWriterFactoryInstance, adapter2.GetSerializationWriterFactory())
-	assert.NotNil(t, adapter2.GetHttpClient())
-	assert.NotNil(t, adapter2.GetParseNodeFactory())
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
 
-	// Throws on nil authProvider
-	_, errNil1 := NewDefaultRequestAdapterWithHttpClient(nil, customClient)
-	assert.Error(t, errNil1)
-
-	_, errNil2 := NewDefaultRequestAdapterWithSerializationWriterFactory(nil, absser.DefaultSerializationWriterFactoryInstance)
-	assert.Error(t, errNil2)
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
 }
 
 func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
@@ -170,7 +216,6 @@ func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, shouldn't panic
 }
-
 
 type mockCustomParseNodeFactory struct{}
 

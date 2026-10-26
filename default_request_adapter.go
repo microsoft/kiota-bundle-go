@@ -33,16 +33,6 @@ func NewDefaultRequestAdapterWithParseNodeFactory(authenticationProvider absauth
 	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authenticationProvider, parseNodeFactory, nil)
 }
 
-// NewDefaultRequestAdapterWithSerializationWriterFactory creates a new DefaultRequestAdapter with the given parameters
-func NewDefaultRequestAdapterWithSerializationWriterFactory(authenticationProvider absauth.AuthenticationProvider, serializationWriterFactory absser.SerializationWriterFactory) (*DefaultRequestAdapter, error) {
-	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, nil, serializationWriterFactory, nil)
-}
-
-// NewDefaultRequestAdapterWithHttpClient creates a new DefaultRequestAdapter with the given authentication provider and custom HTTP client
-func NewDefaultRequestAdapterWithHttpClient(authenticationProvider absauth.AuthenticationProvider, httpClient *nethttp.Client) (*DefaultRequestAdapter, error) {
-	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, nil, nil, httpClient)
-}
-
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory creates a new DefaultRequestAdapter with the given parameters
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory) (*DefaultRequestAdapter, error) {
 	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, parseNodeFactory, serializationWriterFactory, nil)
@@ -50,10 +40,15 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(a
 
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient creates a new DefaultRequestAdapter with the given parameters
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client) (*DefaultRequestAdapter, error) {
+	return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, khttp.ObservabilityOptions{})
+}
+
+// NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions creates a new DefaultRequestAdapter with the given parameters including observability options
+func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client, observabilityOptions khttp.ObservabilityOptions) (*DefaultRequestAdapter, error) {
 	if authenticationProvider == nil {
 		return nil, errors.New("authenticationProvider cannot be nil")
 	}
-	setupDefaults()
+	SetupDefaults()
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
@@ -63,7 +58,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if parseNodeFactory == nil {
 		parseNodeFactory = absser.DefaultParseNodeFactoryInstance
 	}
-	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient)
+	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +126,12 @@ func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFac
 }
 
 var setupDefaultsOnce sync.Once
+
+// SetupDefaults registers the default serializers and deserializers in the global registries.
+// It is thread-safe and executes only once.
+func SetupDefaults() {
+	setupDefaults()
+}
 
 func setupDefaults() {
 	setupDefaultsOnce.Do(func() {
