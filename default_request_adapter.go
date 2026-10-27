@@ -69,11 +69,32 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	return result, nil
 }
 
-var setupDefaultsOnce sync.Once
+var (
+	setupDefaultsOnce sync.Once
+	setupDefaultsLock sync.Mutex
+)
+
+// ResetDefaults resets the default registration state and clears default serializer/deserializer registries.
+// It is thread-safe and allows consumers and test suites to reset registrations between test runs or dynamic reconfigurations.
+func ResetDefaults() {
+	setupDefaultsLock.Lock()
+	defer setupDefaultsLock.Unlock()
+
+	setupDefaultsOnce = sync.Once{}
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+}
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
 // It is thread-safe and executes only once.
 func SetupDefaults() {
+	setupDefaultsLock.Lock()
+	defer setupDefaultsLock.Unlock()
 	setupDefaults()
 }
 

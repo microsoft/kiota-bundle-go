@@ -82,14 +82,7 @@ func TestSerializersAreRegisteredAsExpected(t *testing.T) {
 
 func TestConcurrentAdapterCreation(t *testing.T) {
 	// Reset registration state so workers exercise concurrent first-time registration
-	setupDefaultsOnce = sync.Once{}
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
-	absser.DefaultParseNodeFactoryInstance.Unlock()
+	ResetDefaults()
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -170,14 +163,7 @@ func TestNewDefaultRequestAdapterWithCustomFactories(t *testing.T) {
 
 func TestSetupDefaultsExported(t *testing.T) {
 	// Reset registration state to ensure standalone setup is exercised
-	setupDefaultsOnce = sync.Once{}
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
-	absser.DefaultParseNodeFactoryInstance.Unlock()
+	ResetDefaults()
 
 	SetupDefaults()
 
@@ -191,3 +177,45 @@ func TestSetupDefaultsExported(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 3, deserializerCount)
 }
+
+func TestResetDefaults(t *testing.T) {
+	// Ensure defaults are registered
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
+
+	// Reset registrations
+	ResetDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount = len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 0, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount = len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 0, deserializerCount)
+
+	// Calling SetupDefaults again re-populates the registries
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount = len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount = len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
+}
+
