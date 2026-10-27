@@ -239,4 +239,38 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
 }
 
+func TestConcurrentResetAndSetupDefaults(t *testing.T) {
+	const iterations = 15
+	var wg sync.WaitGroup
+	wg.Add(iterations * 2)
+
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			ResetDefaults()
+		}()
+		go func() {
+			defer wg.Done()
+			SetupDefaults()
+		}()
+	}
+
+	wg.Wait()
+
+	// Ensure final deterministic setup succeeds cleanly
+	ResetDefaults()
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
+}
+
+
 
