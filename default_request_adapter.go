@@ -69,6 +69,30 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	return result, nil
 }
 
+// GetBaseUrl returns the base URL for the request adapter or empty string if the receiver is nil.
+func (a *DefaultRequestAdapter) GetBaseUrl() string {
+	if a == nil {
+		return ""
+	}
+	return a.NetHttpRequestAdapter.GetBaseUrl()
+}
+
+// SetBaseUrl sets the base URL for the request adapter or performs a no-op if the receiver is nil.
+func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
+	if a == nil {
+		return
+	}
+	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
+}
+
+// GetSerializationWriterFactory returns the serialization writer factory or nil if the receiver is nil.
+func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.SerializationWriterFactory {
+	if a == nil {
+		return nil
+	}
+	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
+}
+
 var (
 	setupDefaultsOnce sync.Once
 	setupDefaultsLock sync.Mutex

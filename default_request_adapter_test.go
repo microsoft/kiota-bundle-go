@@ -219,3 +219,24 @@ func TestResetDefaults(t *testing.T) {
 	assert.Equal(t, 3, deserializerCount)
 }
 
+func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Accessors on initialized adapter
+	assert.NotNil(t, adapter.GetSerializationWriterFactory())
+	assert.Equal(t, "", adapter.GetBaseUrl())
+
+	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
+	assert.Equal(t, "https://graph.microsoft.com/v1.0", adapter.GetBaseUrl())
+
+	// Accessors on nil adapter must be safe and not panic
+	var nilAdapter *DefaultRequestAdapter
+	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+	assert.Equal(t, "", nilAdapter.GetBaseUrl())
+	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
+}
+
+
