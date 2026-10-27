@@ -239,6 +239,8 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
 }
 
+// TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
+// are serialized via setupDefaultsLock and do not race with each other or corrupt sync.Once state.
 func TestConcurrentResetAndSetupDefaults(t *testing.T) {
 	const iterations = 15
 	var wg sync.WaitGroup
@@ -271,6 +273,3 @@ func TestConcurrentResetAndSetupDefaults(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 3, deserializerCount)
 }
-
-
-

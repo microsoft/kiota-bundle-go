@@ -99,18 +99,36 @@ var (
 )
 
 // ResetDefaults resets the default registration state and clears default serializer/deserializer registries.
-// It is thread-safe and allows consumers and test suites to reset registrations between test runs or dynamic reconfigurations.
+// It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
+//
+// Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
+// read from their factory maps without locking, callers must ensure that all request adapters and registry consumers
+// remain idle throughout reset and reinitialization. ResetDefaults is intended for test suites and initialization
+// lifecycles between test runs or configuration phases, and must not be called concurrently with active request
+// serialization or response parsing.
 func ResetDefaults() {
 	setupDefaultsLock.Lock()
 	defer setupDefaultsLock.Unlock()
 
 	setupDefaultsOnce = sync.Once{}
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
+		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
+			delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
+		}
+	} else {
+		absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	}
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
-	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
+		for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
+			delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
+		}
+	} else {
+		absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	}
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
