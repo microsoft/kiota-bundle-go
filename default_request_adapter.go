@@ -69,11 +69,74 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	return result, nil
 }
 
-var setupDefaultsOnce sync.Once
+// GetBaseUrl returns the base URL for the request adapter or empty string if the receiver is nil.
+func (a *DefaultRequestAdapter) GetBaseUrl() string {
+	if a == nil {
+		return ""
+	}
+	return a.NetHttpRequestAdapter.GetBaseUrl()
+}
+
+// SetBaseUrl sets the base URL for the request adapter or performs a no-op if the receiver is nil.
+func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
+	if a == nil {
+		return
+	}
+	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
+}
+
+// GetSerializationWriterFactory returns the serialization writer factory or nil if the receiver is nil.
+func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.SerializationWriterFactory {
+	if a == nil {
+		return nil
+	}
+	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
+}
+
+var (
+	setupDefaultsOnce sync.Once
+	setupDefaultsLock sync.Mutex
+)
+
+// ResetDefaults resets the default registration state and clears default serializer/deserializer registries.
+// It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
+//
+// Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
+// read from their factory maps without locking, callers must ensure that all request adapters and registry consumers
+// remain idle throughout reset and reinitialization. ResetDefaults is intended for test suites and initialization
+// lifecycles between test runs or configuration phases, and must not be called concurrently with active request
+// serialization or response parsing.
+func ResetDefaults() {
+	setupDefaultsLock.Lock()
+	defer setupDefaultsLock.Unlock()
+
+	setupDefaultsOnce = sync.Once{}
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
+		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
+			delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
+		}
+	} else {
+		absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
+		for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
+			delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
+		}
+	} else {
+		absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+}
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
 // It is thread-safe and executes only once.
 func SetupDefaults() {
+	setupDefaultsLock.Lock()
+	defer setupDefaultsLock.Unlock()
 	setupDefaults()
 }
 
