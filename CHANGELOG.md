@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.4...v1.5.0) (2026-10-27)
+
+
+### Features
+
+* **bundle:** add defensive nil receiver guards on DefaultRequestAdapter accessors ([1db038e](https://github.com/microsoft/kiota-bundle-go/commit/1db038e5e90292f6026bf4680d87af0f6e255211))
+* **bundle:** export ResetDefaults helper and add defensive receiver guards for DefaultRequestAdapter ([7cf322e](https://github.com/microsoft/kiota-bundle-go/commit/7cf322e93204b7da505e5d1cf6e9ed716a585696))
+* **bundle:** export ResetDefaults helper and synchronize default registration ([8d573c2](https://github.com/microsoft/kiota-bundle-go/commit/8d573c293b424cc15019eaae66d3ca7b41601c0a))
+* **bundle:** support observability options in constructor and export SetupDefaults ([900852b](https://github.com/microsoft/kiota-bundle-go/commit/900852b79b6c02ef926657f0ec98f0c9c66b115e))
+* **bundle:** support observability options in constructor and export SetupDefaults ([fbebe2a](https://github.com/microsoft/kiota-bundle-go/commit/fbebe2a3e2e1255824fd2642471258a722e50a7a))
+
 ## [1.4.4](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.3...v1.4.4) (2026-10-21)
 
 

@@ -83,14 +83,7 @@ func TestSerializersAreRegisteredAsExpected(t *testing.T) {
 
 func TestConcurrentAdapterCreation(t *testing.T) {
 	// Reset registration state so workers exercise concurrent first-time registration
-	setupDefaultsOnce = sync.Once{}
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
-	absser.DefaultParseNodeFactoryInstance.Unlock()
+	ResetDefaults()
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -171,14 +164,7 @@ func TestNewDefaultRequestAdapterWithCustomFactories(t *testing.T) {
 
 func TestSetupDefaultsExported(t *testing.T) {
 	// Reset registration state to ensure standalone setup is exercised
-	setupDefaultsOnce = sync.Once{}
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
-	absser.DefaultParseNodeFactoryInstance.Unlock()
+	ResetDefaults()
 
 	SetupDefaults()
 
@@ -193,13 +179,54 @@ func TestSetupDefaultsExported(t *testing.T) {
 	assert.Equal(t, 3, deserializerCount)
 }
 
-func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
+func TestResetDefaults(t *testing.T) {
+	// Ensure defaults are registered
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
+
+	// Reset registrations
+	ResetDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount = len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 0, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount = len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 0, deserializerCount)
+
+	// Calling SetupDefaults again re-populates the registries
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount = len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount = len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
+}
+
+func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
 	adapter, err := NewDefaultRequestAdapter(authProvider)
 	assert.NoError(t, err)
 	assert.NotNil(t, adapter)
 
-	// Accessors on valid adapter
+	// Accessors on initialized adapter
 	assert.NotNil(t, adapter.GetHttpClient())
 	assert.NotNil(t, adapter.GetParseNodeFactory())
 	assert.NotNil(t, adapter.GetSerializationWriterFactory())
@@ -208,13 +235,48 @@ func TestDefaultRequestAdapterAccessorsAndNilGuards(t *testing.T) {
 	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
 	assert.Equal(t, "https://graph.microsoft.com/v1.0", adapter.GetBaseUrl())
 
-	// Accessors on nil adapter should not panic
+	// Accessors on nil adapter must be safe and not panic
 	var nilAdapter *DefaultRequestAdapter
 	assert.Nil(t, nilAdapter.GetHttpClient())
 	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
-	nilAdapter.SetBaseUrl("https://example.com") // no-op, shouldn't panic
+	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
+}
+
+// TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
+// are serialized via setupDefaultsLock and do not race with each other or corrupt sync.Once state.
+func TestConcurrentResetAndSetupDefaults(t *testing.T) {
+	const iterations = 15
+	var wg sync.WaitGroup
+	wg.Add(iterations * 2)
+
+	for i := 0; i < iterations; i++ {
+		go func() {
+			defer wg.Done()
+			ResetDefaults()
+		}()
+		go func() {
+			defer wg.Done()
+			SetupDefaults()
+		}()
+	}
+
+	wg.Wait()
+
+	// Ensure final deterministic setup succeeds cleanly
+	ResetDefaults()
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 4, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 3, deserializerCount)
 }
 
 type mockCustomParseNodeFactory struct{}
