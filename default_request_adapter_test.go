@@ -12,6 +12,7 @@ import (
 	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
+	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
 	"github.com/stretchr/testify/assert"
 )
@@ -237,6 +238,7 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
+	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
@@ -272,4 +274,34 @@ func TestConcurrentResetAndSetupDefaults(t *testing.T) {
 	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 3, deserializerCount)
+}
+
+
+func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Enable backing store on initialized adapter with nil factory
+	adapter.EnableBackingStore(nil)
+
+	// Enable backing store with a custom factory
+	customStoreCalled := false
+	customFactory := func() store.BackingStore {
+		customStoreCalled = true
+		return store.NewInMemoryBackingStore()
+	}
+	adapter.EnableBackingStore(customFactory)
+	assert.NotNil(t, store.BackingStoreFactoryInstance)
+	_ = store.BackingStoreFactoryInstance()
+	assert.True(t, customStoreCalled)
+
+	// EnableBackingStore on nil adapter must be safe and not panic
+	var nilAdapter *DefaultRequestAdapter
+	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
+	nilAdapter.EnableBackingStore(customFactory) // no-op, must not panic
+
+	// Reset backing store factory singleton for subsequent tests
+	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 }

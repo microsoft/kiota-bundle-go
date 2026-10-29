@@ -8,6 +8,7 @@ import (
 	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
+	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
 	serform "github.com/microsoft/kiota-serialization-form-go"
 	serjson "github.com/microsoft/kiota-serialization-json-go"
@@ -91,6 +92,14 @@ func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.Serializa
 		return nil
 	}
 	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
+}
+
+// EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use or performs a no-op if the receiver is nil.
+func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFactory) {
+	if a == nil {
+		return
+	}
+	a.NetHttpRequestAdapter.EnableBackingStore(factory)
 }
 
 var (
