@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1](https://github.com/microsoft/kiota-bundle-go/compare/v1.5.0...v1.5.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **bundle:** add defensive nil receiver guard on EnableBackingStore ([8e4029c](https://github.com/microsoft/kiota-bundle-go/commit/8e4029c52b566801c1f317df62dd2a24755989c9))
+* **bundle:** add defensive nil receiver guard on EnableBackingStore ([5a91fcd](https://github.com/microsoft/kiota-bundle-go/commit/5a91fcd695ea9435d070551306f1e4e194448082))
+
 ## [1.5.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.4...v1.5.0) (2026-10-27)
 
 
