@@ -239,6 +239,11 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
+
+	reqInfo := abs.NewRequestInformation()
+	converted, err := nilAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
+	assert.Error(t, err)
+	assert.Nil(t, converted)
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
@@ -304,4 +309,33 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 
 	// Reset backing store factory singleton for subsequent tests
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
+}
+
+func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// ConvertToNativeRequest on initialized adapter
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/users")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	nativeReq, err := adapter.ConvertToNativeRequest(context.Background(), reqInfo)
+	assert.NoError(t, err)
+	assert.NotNil(t, nativeReq)
+	httpReq, ok := nativeReq.(*nethttp.Request)
+	assert.True(t, ok)
+	assert.Equal(t, "GET", httpReq.Method)
+	assert.Equal(t, "https://graph.microsoft.com/v1.0/users", httpReq.URL.String())
+
+	// ConvertToNativeRequest on nil adapter returns error and does not panic
+	var nilAdapter *DefaultRequestAdapter
+	converted, err := nilAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
+	assert.Error(t, err)
+	assert.Nil(t, converted)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
 }
