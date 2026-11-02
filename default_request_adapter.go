@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"context"
 	"errors"
 	nethttp "net/http"
 	"sync"
@@ -100,6 +101,14 @@ func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFac
 		return
 	}
 	a.NetHttpRequestAdapter.EnableBackingStore(factory)
+}
+
+// ConvertToNativeRequest converts the given RequestInformation into a native HTTP request or returns an error if the receiver is nil.
+func (a *DefaultRequestAdapter) ConvertToNativeRequest(ctx context.Context, requestInfo *abs.RequestInformation) (any, error) {
+	if a == nil {
+		return nil, errors.New("request adapter cannot be nil")
+	}
+	return a.NetHttpRequestAdapter.ConvertToNativeRequest(ctx, requestInfo)
 }
 
 var (
