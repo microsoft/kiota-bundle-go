@@ -31,6 +31,16 @@ func (t *recordingTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response,
 	}, nil
 }
 
+func TestDefaultRequestAdapterHonoursInterface(t *testing.T) {
+	instance, err := NewDefaultRequestAdapter(&absauth.AnonymousAuthenticationProvider{})
+	assert.NoError(t, err)
+	assert.NotNil(t, instance)
+	assert.Implements(t, (*abs.RequestAdapter)(nil), instance)
+
+	var nilAdapter *DefaultRequestAdapter
+	assert.Implements(t, (*abs.RequestAdapter)(nil), nilAdapter)
+}
+
 func TestAdapterThrowsErrorOnNillAuthProvider(t *testing.T) {
 	_, err := NewDefaultRequestAdapter(nil)
 	assert.Error(t, err) // adapter can't be nill
@@ -244,6 +254,42 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	converted, err := nilAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
 	assert.Error(t, err)
 	assert.Nil(t, converted)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	// Send methods on nil adapter must return an error and not panic
+	resp, err := nilAdapter.Send(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnum)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnumColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrim)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrimColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
@@ -280,7 +326,6 @@ func TestConcurrentResetAndSetupDefaults(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 3, deserializerCount)
 }
-
 
 func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
@@ -337,5 +382,73 @@ func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	converted, err := nilAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
 	assert.Error(t, err)
 	assert.Nil(t, converted)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+}
+
+func TestDefaultRequestAdapterSendMethods(t *testing.T) {
+	recorder := &recordingTransport{}
+	clientWithTransport := &nethttp.Client{Transport: recorder}
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(
+		authProvider,
+		nil,
+		nil,
+		clientWithTransport,
+	)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/me")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	// Initialized adapter delegates SendNoContent to underlying NetHttpRequestAdapter
+	err = adapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, recorder.req)
+	assert.Equal(t, "GET", recorder.req.Method)
+
+	// Initialized adapter delegates nil requestInfo error handling to NetHttpRequestAdapter
+	err = adapter.SendNoContent(context.Background(), nil, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "requestInfo cannot be nil", err.Error())
+
+	// All Send methods on nil adapter return error and do not panic
+	var nilAdapter *DefaultRequestAdapter
+
+	resp, err := nilAdapter.Send(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnum)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnumColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrim)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrimColl)
+	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
 }
