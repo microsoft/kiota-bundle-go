@@ -180,6 +180,15 @@ func TestSetupDefaultsExported(t *testing.T) {
 }
 
 func TestResetDefaults(t *testing.T) {
+	// Override backing store factory to verify restoration on ResetDefaults
+	customCalled := false
+	store.BackingStoreFactoryInstance = func() store.BackingStore {
+		customCalled = true
+		return store.NewInMemoryBackingStore()
+	}
+	_ = store.BackingStoreFactoryInstance()
+	assert.True(t, customCalled)
+
 	// Ensure defaults are registered
 	SetupDefaults()
 
@@ -206,6 +215,14 @@ func TestResetDefaults(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 0, deserializerCount)
 
+	// Verify BackingStoreFactoryInstance was restored to default InMemoryBackingStore
+	customCalled = false
+	bs := store.BackingStoreFactoryInstance()
+	assert.NotNil(t, bs)
+	assert.False(t, customCalled)
+	_, isInMemory := bs.(*store.InMemoryBackingStore)
+	assert.True(t, isInMemory)
+
 	// Calling SetupDefaults again re-populates the registries
 	SetupDefaults()
 
@@ -218,6 +235,31 @@ func TestResetDefaults(t *testing.T) {
 	deserializerCount = len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.Equal(t, 3, deserializerCount)
+}
+
+func TestResetDefaultsRestoresBackingStoreFactoryInstance(t *testing.T) {
+	customStoreCalled := false
+	customFactory := func() store.BackingStore {
+		customStoreCalled = true
+		return store.NewInMemoryBackingStore()
+	}
+	store.BackingStoreFactoryInstance = customFactory
+	_ = store.BackingStoreFactoryInstance()
+	assert.True(t, customStoreCalled)
+
+	// Calling ResetDefaults must restore default InMemoryBackingStore factory
+	ResetDefaults()
+
+	assert.NotNil(t, store.BackingStoreFactoryInstance)
+	bs := store.BackingStoreFactoryInstance()
+	assert.NotNil(t, bs)
+	_, isInMemory := bs.(*store.InMemoryBackingStore)
+	assert.True(t, isInMemory)
+
+	// Verify that customFactory is no longer invoked
+	customStoreCalled = false
+	_ = store.BackingStoreFactoryInstance()
+	assert.False(t, customStoreCalled)
 }
 
 func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
@@ -307,8 +349,12 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
 	nilAdapter.EnableBackingStore(customFactory) // no-op, must not panic
 
-	// Reset backing store factory singleton for subsequent tests
-	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
+	// Reset defaults cleans up registrations and backing store factory singleton
+	ResetDefaults()
+	bs := store.BackingStoreFactoryInstance()
+	assert.NotNil(t, bs)
+	_, isInMemory := bs.(*store.InMemoryBackingStore)
+	assert.True(t, isInMemory)
 }
 
 func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
