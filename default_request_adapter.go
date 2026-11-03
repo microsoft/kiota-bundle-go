@@ -116,7 +116,8 @@ var (
 	setupDefaultsLock sync.Mutex
 )
 
-// ResetDefaults resets the default registration state and clears default serializer/deserializer registries.
+// ResetDefaults resets the default registration state, clears default serializer/deserializer registries,
+// and restores BackingStoreFactoryInstance to NewInMemoryBackingStore.
 // It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
 //
 // Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
@@ -129,6 +130,8 @@ func ResetDefaults() {
 	defer setupDefaultsLock.Unlock()
 
 	setupDefaultsOnce = sync.Once{}
+	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
+
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
 	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
 		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
