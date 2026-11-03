@@ -31,6 +31,8 @@ func (t *recordingTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response,
 	}, nil
 }
 
+var _ abs.RequestAdapter = (*DefaultRequestAdapter)(nil)
+
 func TestDefaultRequestAdapterHonoursInterface(t *testing.T) {
 	instance, err := NewDefaultRequestAdapter(&absauth.AnonymousAuthenticationProvider{})
 	assert.NoError(t, err)

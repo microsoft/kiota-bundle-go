@@ -22,8 +22,6 @@ type DefaultRequestAdapter struct {
 	khttp.NetHttpRequestAdapter
 }
 
-var _ abs.RequestAdapter = (*DefaultRequestAdapter)(nil)
-
 // NewDefaultRequestAdapter creates a new DefaultRequestAdapter with the given parameters
 func NewDefaultRequestAdapter(authenticationProvider absauth.AuthenticationProvider) (*DefaultRequestAdapter, error) {
 	return NewDefaultRequestAdapterWithParseNodeFactory(authenticationProvider, nil)
