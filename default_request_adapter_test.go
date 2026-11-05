@@ -527,3 +527,39 @@ func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
 	var nilAdapter *DefaultRequestAdapter
 	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 }
+
+// TestConcurrentFactoryAccessors validates that concurrent invocations of GetParseNodeFactory
+// and GetSerializationWriterFactory on both initialized and nil adapters are safe and do not panic.
+func TestConcurrentFactoryAccessors(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	var nilAdapter *DefaultRequestAdapter
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 2)
+
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				pnf := adapter.GetParseNodeFactory()
+				assert.NotNil(t, pnf)
+				swf := adapter.GetSerializationWriterFactory()
+				assert.NotNil(t, swf)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				assert.Nil(t, nilAdapter.GetParseNodeFactory())
+				assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+			}
+		}()
+	}
+
+	wg.Wait()
+}
