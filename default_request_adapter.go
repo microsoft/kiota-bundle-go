@@ -87,7 +87,7 @@ func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
 	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
 }
 
-// GetSerializationWriterFactory returns the serialization writer factory or nil if the receiver is nil.
+// GetSerializationWriterFactory returns the serialization writer factory currently in use by the request adapter, or nil if the receiver is nil.
 func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.SerializationWriterFactory {
 	if a == nil {
 		return nil
@@ -95,7 +95,7 @@ func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.Serializa
 	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
 }
 
-// GetParseNodeFactory returns the parse node factory or nil if the receiver is nil.
+// GetParseNodeFactory returns the parse node factory currently in use by the request adapter, or nil if the receiver is nil.
 func (a *DefaultRequestAdapter) GetParseNodeFactory() absser.ParseNodeFactory {
 	if a == nil {
 		return nil
