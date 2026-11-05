@@ -95,6 +95,14 @@ func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.Serializa
 	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
 }
 
+// GetParseNodeFactory returns the parse node factory or nil if the receiver is nil.
+func (a *DefaultRequestAdapter) GetParseNodeFactory() absser.ParseNodeFactory {
+	if a == nil {
+		return nil
+	}
+	return a.NetHttpRequestAdapter.GetParseNodeFactory()
+}
+
 // EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use or performs a no-op if the receiver is nil.
 func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFactory) {
 	if a == nil {
