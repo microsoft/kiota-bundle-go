@@ -381,6 +381,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 
 	// Enable backing store on initialized adapter with nil factory
 	adapter.EnableBackingStore(nil)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 
 	// Enable backing store with a custom factory
 	customStoreCalled := false
@@ -390,6 +391,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	}
 	adapter.EnableBackingStore(customFactory)
 	assert.NotNil(t, store.BackingStoreFactoryInstance)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 	_ = store.BackingStoreFactoryInstance()
 	assert.True(t, customStoreCalled)
 
@@ -397,6 +399,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	var nilAdapter *DefaultRequestAdapter
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
 	nilAdapter.EnableBackingStore(customFactory) // no-op, must not panic
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 
 	// Reset defaults cleans up registrations and backing store factory singleton
 	ResetDefaults()
