@@ -502,3 +502,25 @@ func TestDefaultRequestAdapterSendMethods(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
 }
+
+func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+
+	// Default initialization uses absser.DefaultParseNodeFactoryInstance
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
+	assert.Equal(t, absser.DefaultParseNodeFactoryInstance, adapter.GetParseNodeFactory())
+
+	// Custom parse node factory is preserved and returned
+	customFactory := absser.NewParseNodeFactoryRegistry()
+	customAdapter, err := NewDefaultRequestAdapterWithParseNodeFactory(authProvider, customFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, customAdapter)
+	assert.Equal(t, customFactory, customAdapter.GetParseNodeFactory())
+
+	// Nil adapter returns nil safely without panicking
+	var nilAdapter *DefaultRequestAdapter
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
+}
