@@ -282,6 +282,7 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 
 	// Accessors on initialized adapter
 	assert.NotNil(t, adapter.GetSerializationWriterFactory())
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 	assert.Equal(t, "", adapter.GetBaseUrl())
 
 	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
@@ -290,6 +291,7 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	// Accessors on nil adapter must be safe and not panic
 	var nilAdapter *DefaultRequestAdapter
 	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
