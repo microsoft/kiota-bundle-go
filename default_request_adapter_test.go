@@ -282,6 +282,7 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 
 	// Accessors on initialized adapter
 	assert.NotNil(t, adapter.GetSerializationWriterFactory())
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 	assert.Equal(t, "", adapter.GetBaseUrl())
 
 	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
@@ -290,6 +291,7 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	// Accessors on nil adapter must be safe and not panic
 	var nilAdapter *DefaultRequestAdapter
 	assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 	assert.Equal(t, "", nilAdapter.GetBaseUrl())
 	nilAdapter.SetBaseUrl("https://example.com") // no-op, must not panic
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
@@ -379,6 +381,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 
 	// Enable backing store on initialized adapter with nil factory
 	adapter.EnableBackingStore(nil)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 
 	// Enable backing store with a custom factory
 	customStoreCalled := false
@@ -388,6 +391,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	}
 	adapter.EnableBackingStore(customFactory)
 	assert.NotNil(t, store.BackingStoreFactoryInstance)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
 	_ = store.BackingStoreFactoryInstance()
 	assert.True(t, customStoreCalled)
 
@@ -395,6 +399,7 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	var nilAdapter *DefaultRequestAdapter
 	nilAdapter.EnableBackingStore(nil)           // no-op, must not panic
 	nilAdapter.EnableBackingStore(customFactory) // no-op, must not panic
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
 
 	// Reset defaults cleans up registrations and backing store factory singleton
 	ResetDefaults()
@@ -499,4 +504,62 @@ func TestDefaultRequestAdapterSendMethods(t *testing.T) {
 	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+}
+
+func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+
+	// Default initialization uses absser.DefaultParseNodeFactoryInstance
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.NotNil(t, adapter.GetParseNodeFactory())
+	assert.Equal(t, absser.DefaultParseNodeFactoryInstance, adapter.GetParseNodeFactory())
+
+	// Custom parse node factory is preserved and returned
+	customFactory := absser.NewParseNodeFactoryRegistry()
+	customAdapter, err := NewDefaultRequestAdapterWithParseNodeFactory(authProvider, customFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, customAdapter)
+	assert.Equal(t, customFactory, customAdapter.GetParseNodeFactory())
+
+	// Nil adapter returns nil safely without panicking
+	var nilAdapter *DefaultRequestAdapter
+	assert.Nil(t, nilAdapter.GetParseNodeFactory())
+}
+
+// TestConcurrentFactoryAccessors validates that concurrent invocations of GetParseNodeFactory
+// and GetSerializationWriterFactory on both initialized and nil adapters are safe and do not panic.
+func TestConcurrentFactoryAccessors(t *testing.T) {
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	var nilAdapter *DefaultRequestAdapter
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	wg.Add(goroutines * 2)
+
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				pnf := adapter.GetParseNodeFactory()
+				assert.NotNil(t, pnf)
+				swf := adapter.GetSerializationWriterFactory()
+				assert.NotNil(t, swf)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				assert.Nil(t, nilAdapter.GetParseNodeFactory())
+				assert.Nil(t, nilAdapter.GetSerializationWriterFactory())
+			}
+		}()
+	}
+
+	wg.Wait()
 }
