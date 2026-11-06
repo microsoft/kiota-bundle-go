@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1](https://github.com/microsoft/kiota-bundle-go/compare/v1.5.0...v1.5.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **bundle:** add defensive nil receiver guard on ConvertToNativeRequest ([337998b](https://github.com/microsoft/kiota-bundle-go/commit/337998b0f96ff1656ae2cb42cd08ac0cbf0295e3))
+* **bundle:** add defensive nil receiver guard on ConvertToNativeRequest ([470d19f](https://github.com/microsoft/kiota-bundle-go/commit/470d19f3f3711b7dc578a2894566a31a358195b4))
+* **bundle:** add defensive nil receiver guard on EnableBackingStore ([8e4029c](https://github.com/microsoft/kiota-bundle-go/commit/8e4029c52b566801c1f317df62dd2a24755989c9))
+* **bundle:** add defensive nil receiver guard on EnableBackingStore ([5a91fcd](https://github.com/microsoft/kiota-bundle-go/commit/5a91fcd695ea9435d070551306f1e4e194448082))
+* **bundle:** add defensive nil receiver guard on GetParseNodeFactory ([d7bce40](https://github.com/microsoft/kiota-bundle-go/commit/d7bce401ee34bd22da221f8b84d863ee2e22d587))
+* **bundle:** add defensive nil receiver guard on GetParseNodeFactory ([61f239d](https://github.com/microsoft/kiota-bundle-go/commit/61f239d64de529002d1a522d745edbe25f81ac19))
+* **bundle:** add defensive nil receiver guards on Send methods ([9683a2c](https://github.com/microsoft/kiota-bundle-go/commit/9683a2ca869bcb4587dc5b1f1c0df43df00d0be9))
+* **bundle:** add defensive nil receiver guards on Send methods ([310213c](https://github.com/microsoft/kiota-bundle-go/commit/310213c5e2ddd50a0362781a399376caba43b22e))
+* **bundle:** restore backing store factory instance in ResetDefaults ([4911033](https://github.com/microsoft/kiota-bundle-go/commit/491103311f606ee22590a21ee3e6725458bc7463))
+* **bundle:** restore backing store factory instance in ResetDefaults ([9ac7a71](https://github.com/microsoft/kiota-bundle-go/commit/9ac7a711fc0f70f5ec8600e0c89f44e73752335e))
+
 ## [1.5.0](https://github.com/microsoft/kiota-bundle-go/compare/v1.4.4...v1.5.0) (2026-10-27)
 
 
