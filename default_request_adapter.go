@@ -196,25 +196,33 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
-		}
+	if absser.DefaultSerializationWriterFactoryInstance == nil {
+		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
 	} else {
-		absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+		absser.DefaultSerializationWriterFactoryInstance.Lock()
+		if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
+			for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
+				delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
+			}
+		} else {
+			absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+		}
+		absser.DefaultSerializationWriterFactoryInstance.Unlock()
 	}
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
-		}
+	if absser.DefaultParseNodeFactoryInstance == nil {
+		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
 	} else {
-		absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+		absser.DefaultParseNodeFactoryInstance.Lock()
+		if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
+			for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
+				delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
+			}
+		} else {
+			absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+		}
+		absser.DefaultParseNodeFactoryInstance.Unlock()
 	}
-	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
