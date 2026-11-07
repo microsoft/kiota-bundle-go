@@ -274,6 +274,44 @@ func TestResetDefaultsRestoresBackingStoreFactoryInstance(t *testing.T) {
 	assert.False(t, customStoreCalled)
 }
 
+func TestResetDefaultsWithNilFactoryInstances(t *testing.T) {
+	defer func() {
+		ResetDefaults()
+		SetupDefaults()
+	}()
+
+	// Simulate environments or test fixtures where factory singletons were cleared or nil
+	absser.DefaultSerializationWriterFactoryInstance = nil
+	absser.DefaultParseNodeFactoryInstance = nil
+
+	// ResetDefaults must not panic and must safely reinitialize both registries
+	ResetDefaults()
+
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance)
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance)
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.Equal(t, 0, serializerCount)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.Equal(t, 0, deserializerCount)
+
+	// Verify one nil and one populated
+	absser.DefaultSerializationWriterFactoryInstance = nil
+	ResetDefaults()
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance)
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance)
+
+	absser.DefaultParseNodeFactoryInstance = nil
+	ResetDefaults()
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance)
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance)
+}
+
 func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
 	adapter, err := NewDefaultRequestAdapter(authProvider)
