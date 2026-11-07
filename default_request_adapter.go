@@ -182,6 +182,7 @@ var (
 
 // ResetDefaults resets the default registration state, clears default serializer/deserializer registries,
 // and restores BackingStoreFactoryInstance to NewInMemoryBackingStore.
+// It also ensures default serializer and deserializer registry singletons are initialized if nil.
 // It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
 //
 // Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
@@ -196,28 +197,37 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
-		}
+	if absser.DefaultSerializationWriterFactoryInstance == nil {
+		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
 	} else {
-		absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+		absser.DefaultSerializationWriterFactoryInstance.Lock()
+		if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
+			for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
+				delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
+			}
+		} else {
+			absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+		}
+		absser.DefaultSerializationWriterFactoryInstance.Unlock()
 	}
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
-		}
+	if absser.DefaultParseNodeFactoryInstance == nil {
+		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
 	} else {
-		absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+		absser.DefaultParseNodeFactoryInstance.Lock()
+		if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
+			for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
+				delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
+			}
+		} else {
+			absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+		}
+		absser.DefaultParseNodeFactoryInstance.Unlock()
 	}
-	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
+// It ensures default serializer and deserializer registry singletons are initialized if nil before registration.
 // It is thread-safe and executes only once.
 func SetupDefaults() {
 	setupDefaultsLock.Lock()
@@ -226,6 +236,12 @@ func SetupDefaults() {
 }
 
 func setupDefaults() {
+	if absser.DefaultSerializationWriterFactoryInstance == nil {
+		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+	}
+	if absser.DefaultParseNodeFactoryInstance == nil {
+		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+	}
 	setupDefaultsOnce.Do(func() {
 		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
 			return serjson.NewJsonSerializationWriterFactory()
