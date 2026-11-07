@@ -182,6 +182,7 @@ var (
 
 // ResetDefaults resets the default registration state, clears default serializer/deserializer registries,
 // and restores BackingStoreFactoryInstance to NewInMemoryBackingStore.
+// It also ensures default serializer and deserializer registry singletons are initialized if nil.
 // It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
 //
 // Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
@@ -226,6 +227,7 @@ func ResetDefaults() {
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
+// It ensures default serializer and deserializer registry singletons are initialized if nil before registration.
 // It is thread-safe and executes only once.
 func SetupDefaults() {
 	setupDefaultsLock.Lock()
@@ -234,6 +236,12 @@ func SetupDefaults() {
 }
 
 func setupDefaults() {
+	if absser.DefaultSerializationWriterFactoryInstance == nil {
+		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+	}
+	if absser.DefaultParseNodeFactoryInstance == nil {
+		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+	}
 	setupDefaultsOnce.Do(func() {
 		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
 			return serjson.NewJsonSerializationWriterFactory()
