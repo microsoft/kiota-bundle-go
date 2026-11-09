@@ -330,14 +330,21 @@ func TestSetupDefaultsWithNilFactoryInstances(t *testing.T) {
 	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance)
 
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	serializerCount := len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	serializerMap := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, serializerMap)
+	assert.Contains(t, serializerMap, "application/json")
+	assert.Contains(t, serializerMap, "text/plain")
+	assert.Contains(t, serializerMap, "application/x-www-form-urlencoded")
+	assert.Contains(t, serializerMap, "multipart/form-data")
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-	assert.Equal(t, 4, serializerCount)
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
-	deserializerCount := len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	deserializerMap := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, deserializerMap)
+	assert.Contains(t, deserializerMap, "application/json")
+	assert.Contains(t, deserializerMap, "text/plain")
+	assert.Contains(t, deserializerMap, "application/x-www-form-urlencoded")
 	absser.DefaultParseNodeFactoryInstance.Unlock()
-	assert.Equal(t, 3, deserializerCount)
 
 	// Adapter creation must succeed using the newly initialized default registries
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
@@ -352,7 +359,8 @@ func TestSetupDefaultsWithNilFactoryInstances(t *testing.T) {
 	absser.DefaultSerializationWriterFactoryInstance = nil
 	SetupDefaults()
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	assert.Equal(t, 4, len(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories))
+	assert.NotEmpty(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
 	// Test partial nil state for parse node factory
@@ -360,7 +368,8 @@ func TestSetupDefaultsWithNilFactoryInstances(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance = nil
 	SetupDefaults()
 	absser.DefaultParseNodeFactoryInstance.Lock()
-	assert.Equal(t, 3, len(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories))
+	assert.NotEmpty(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 

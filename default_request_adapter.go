@@ -197,32 +197,54 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
-	if absser.DefaultSerializationWriterFactoryInstance == nil {
-		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
-	} else {
-		absser.DefaultSerializationWriterFactoryInstance.Lock()
-		if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
-			for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
-				delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
-			}
-		} else {
-			absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-		}
-		absser.DefaultSerializationWriterFactoryInstance.Unlock()
-	}
+	writerReg := absser.DefaultSerializationWriterFactoryInstance
+	clearOrInitRegistry(
+		writerReg,
+		writerReg == nil,
+		func() { absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry() },
+		func(r *absser.SerializationWriterFactoryRegistry) map[string]absser.SerializationWriterFactory {
+			return r.ContentTypeAssociatedFactories
+		},
+		func(r *absser.SerializationWriterFactoryRegistry, m map[string]absser.SerializationWriterFactory) {
+			r.ContentTypeAssociatedFactories = m
+		},
+	)
 
-	if absser.DefaultParseNodeFactoryInstance == nil {
-		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
-	} else {
-		absser.DefaultParseNodeFactoryInstance.Lock()
-		if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
-			for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
-				delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
-			}
-		} else {
-			absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	parseReg := absser.DefaultParseNodeFactoryInstance
+	clearOrInitRegistry(
+		parseReg,
+		parseReg == nil,
+		func() { absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry() },
+		func(r *absser.ParseNodeFactoryRegistry) map[string]absser.ParseNodeFactory {
+			return r.ContentTypeAssociatedFactories
+		},
+		func(r *absser.ParseNodeFactoryRegistry, m map[string]absser.ParseNodeFactory) {
+			r.ContentTypeAssociatedFactories = m
+		},
+	)
+}
+
+func clearOrInitRegistry[R sync.Locker, F any](
+	reg R,
+	isNil bool,
+	initFn func(),
+	getMap func(R) map[string]F,
+	setMap func(R, map[string]F),
+) {
+	if isNil {
+		initFn()
+		return
+	}
+	reg.Lock()
+	defer reg.Unlock()
+
+	factories := getMap(reg)
+	if factories != nil {
+		for k := range factories {
+			delete(factories, k)
 		}
-		absser.DefaultParseNodeFactoryInstance.Unlock()
+	} else {
+		setMap(reg, make(map[string]F))
 	}
 }
 
