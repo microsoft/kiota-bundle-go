@@ -182,6 +182,7 @@ var (
 
 // ResetDefaults resets the default registration state, clears default serializer/deserializer registries,
 // and restores BackingStoreFactoryInstance to NewInMemoryBackingStore.
+// It also ensures default serializer and deserializer registry singletons are initialized if nil.
 // It synchronizes reset and registration cycles against SetupDefaults via a package-level mutex.
 //
 // Note: Because the underlying registry lookups in kiota-abstractions-go (GetSerializationWriter and GetRootParseNode)
@@ -196,28 +197,59 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
-	absser.DefaultSerializationWriterFactoryInstance.Lock()
-	if absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, k)
-		}
-	} else {
-		absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
-	}
-	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	writerReg := absser.DefaultSerializationWriterFactoryInstance
+	clearOrInitRegistry(
+		writerReg,
+		writerReg == nil,
+		func() { absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry() },
+		func(r *absser.SerializationWriterFactoryRegistry) map[string]absser.SerializationWriterFactory {
+			return r.ContentTypeAssociatedFactories
+		},
+		func(r *absser.SerializationWriterFactoryRegistry, m map[string]absser.SerializationWriterFactory) {
+			r.ContentTypeAssociatedFactories = m
+		},
+	)
 
-	absser.DefaultParseNodeFactoryInstance.Lock()
-	if absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories != nil {
-		for k := range absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories {
-			delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, k)
+	parseReg := absser.DefaultParseNodeFactoryInstance
+	clearOrInitRegistry(
+		parseReg,
+		parseReg == nil,
+		func() { absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry() },
+		func(r *absser.ParseNodeFactoryRegistry) map[string]absser.ParseNodeFactory {
+			return r.ContentTypeAssociatedFactories
+		},
+		func(r *absser.ParseNodeFactoryRegistry, m map[string]absser.ParseNodeFactory) {
+			r.ContentTypeAssociatedFactories = m
+		},
+	)
+}
+
+func clearOrInitRegistry[R sync.Locker, F any](
+	reg R,
+	isNil bool,
+	initFn func(),
+	getMap func(R) map[string]F,
+	setMap func(R, map[string]F),
+) {
+	if isNil {
+		initFn()
+		return
+	}
+	reg.Lock()
+	defer reg.Unlock()
+
+	factories := getMap(reg)
+	if factories != nil {
+		for k := range factories {
+			delete(factories, k)
 		}
 	} else {
-		absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+		setMap(reg, make(map[string]F))
 	}
-	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
+// It ensures default serializer and deserializer registry singletons are initialized if nil before registration.
 // It is thread-safe and executes only once.
 func SetupDefaults() {
 	setupDefaultsLock.Lock()
@@ -225,28 +257,57 @@ func SetupDefaults() {
 	setupDefaults()
 }
 
-func setupDefaults() {
-	setupDefaultsOnce.Do(func() {
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return serjson.NewJsonSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return sertext.NewTextSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return serform.NewFormSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return sermultipart.NewMultipartSerializationWriterFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return serjson.NewJsonParseNodeFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return sertext.NewTextParseNodeFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return serform.NewFormParseNodeFactory()
-		})
+func registerDefaultSerializers() {
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return serjson.NewJsonSerializationWriterFactory()
 	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return sertext.NewTextSerializationWriterFactory()
+	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return serform.NewFormSerializationWriterFactory()
+	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return sermultipart.NewMultipartSerializationWriterFactory()
+	})
+}
+
+func registerDefaultDeserializers() {
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return serjson.NewJsonParseNodeFactory()
+	})
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return sertext.NewTextParseNodeFactory()
+	})
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return serform.NewFormParseNodeFactory()
+	})
+}
+
+func setupDefaults() {
+	recreatedWriters := false
+	if absser.DefaultSerializationWriterFactoryInstance == nil {
+		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+		recreatedWriters = true
+	}
+
+	recreatedParsers := false
+	if absser.DefaultParseNodeFactoryInstance == nil {
+		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+		recreatedParsers = true
+	}
+
+	setupDefaultsOnce.Do(func() {
+		registerDefaultSerializers()
+		registerDefaultDeserializers()
+		recreatedWriters = false
+		recreatedParsers = false
+	})
+
+	if recreatedWriters {
+		registerDefaultSerializers()
+	}
+	if recreatedParsers {
+		registerDefaultDeserializers()
+	}
 }
