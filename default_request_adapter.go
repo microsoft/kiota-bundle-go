@@ -257,34 +257,57 @@ func SetupDefaults() {
 	setupDefaults()
 }
 
+func registerDefaultSerializers() {
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return serjson.NewJsonSerializationWriterFactory()
+	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return sertext.NewTextSerializationWriterFactory()
+	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return serform.NewFormSerializationWriterFactory()
+	})
+	abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
+		return sermultipart.NewMultipartSerializationWriterFactory()
+	})
+}
+
+func registerDefaultDeserializers() {
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return serjson.NewJsonParseNodeFactory()
+	})
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return sertext.NewTextParseNodeFactory()
+	})
+	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
+		return serform.NewFormParseNodeFactory()
+	})
+}
+
 func setupDefaults() {
+	recreatedWriters := false
 	if absser.DefaultSerializationWriterFactoryInstance == nil {
 		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+		recreatedWriters = true
 	}
+
+	recreatedParsers := false
 	if absser.DefaultParseNodeFactoryInstance == nil {
 		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+		recreatedParsers = true
 	}
+
 	setupDefaultsOnce.Do(func() {
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return serjson.NewJsonSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return sertext.NewTextSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return serform.NewFormSerializationWriterFactory()
-		})
-		abs.RegisterDefaultSerializer(func() absser.SerializationWriterFactory {
-			return sermultipart.NewMultipartSerializationWriterFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return serjson.NewJsonParseNodeFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return sertext.NewTextParseNodeFactory()
-		})
-		abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
-			return serform.NewFormParseNodeFactory()
-		})
+		registerDefaultSerializers()
+		registerDefaultDeserializers()
+		recreatedWriters = false
+		recreatedParsers = false
 	})
+
+	if recreatedWriters {
+		registerDefaultSerializers()
+	}
+	if recreatedParsers {
+		registerDefaultDeserializers()
+	}
 }
