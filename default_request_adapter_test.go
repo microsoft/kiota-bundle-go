@@ -841,3 +841,18 @@ func TestSetupDefaultsWithNilWriterRegistryMap(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, adapterWriter)
 }
+
+func TestSetupDefaultsWithNilParseRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	absser.DefaultParseNodeFactoryInstance = &absser.ParseNodeFactoryRegistry{}
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+
+	rootNode, err := absser.DefaultParseNodeFactoryInstance.GetRootParseNode("application/json", []byte(`{"status":"ok"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, rootNode)
+}
