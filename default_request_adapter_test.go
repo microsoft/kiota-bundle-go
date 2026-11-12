@@ -817,3 +817,27 @@ func TestAdapterFallsBackToDefaultSerializationWriterFactoryOnTypedNil(t *testin
 	assert.NoError(t, err)
 	assert.NotNil(t, writer)
 }
+
+func TestSetupDefaultsWithNilWriterRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	absser.DefaultSerializationWriterFactoryInstance = &absser.SerializationWriterFactoryRegistry{}
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+
+	writer, err := absser.DefaultSerializationWriterFactoryInstance.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = nil
+	adapter, err := NewDefaultRequestAdapter(&absauth.AnonymousAuthenticationProvider{})
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	adapterWriter, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, adapterWriter)
+}
