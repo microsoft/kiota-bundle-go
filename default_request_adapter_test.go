@@ -14,6 +14,7 @@ import (
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
 	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
+	serjson "github.com/microsoft/kiota-serialization-json-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -781,4 +782,21 @@ func TestAdapterThrowsErrorOnTypedNilAuthProvider(t *testing.T) {
 			assert.Nil(t, adapter)
 		})
 	}
+}
+
+func TestAdapterFallsBackToDefaultParseNodeFactoryOnTypedNil(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	var typedNilParseFactory *serjson.JsonParseNodeFactory
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactory(authProvider, typedNilParseFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Equal(t, absser.DefaultParseNodeFactoryInstance, adapter.GetParseNodeFactory())
+
+	rootNode, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"key":"value"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, rootNode)
 }
