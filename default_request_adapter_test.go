@@ -856,3 +856,24 @@ func TestSetupDefaultsWithNilParseRegistryMap(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, rootNode)
 }
+
+func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	customWriter := absser.NewSerializationWriterFactoryRegistry()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-custom"] = customWriter
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = nil
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	// Unaffected writer registry keeps custom registrations.
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/x-custom")
+	// Nil parser map is re-initialized and default deserializers are re-registered without ResetDefaults.
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+}
