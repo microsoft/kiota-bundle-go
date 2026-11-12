@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	nethttp "net/http"
+	"reflect"
 	"sync"
 
 	abs "github.com/microsoft/kiota-abstractions-go"
@@ -44,7 +45,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions creates a new DefaultRequestAdapter with the given parameters including observability options
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client, observabilityOptions khttp.ObservabilityOptions) (*DefaultRequestAdapter, error) {
-	if authenticationProvider == nil {
+	if isNilValue(authenticationProvider) {
 		return nil, errors.New("authenticationProvider cannot be nil")
 	}
 	SetupDefaults()
@@ -282,6 +283,19 @@ func registerDefaultDeserializers() {
 	abs.RegisterDefaultDeserializer(func() absser.ParseNodeFactory {
 		return serform.NewFormParseNodeFactory()
 	})
+}
+
+func isNilValue(val any) bool {
+	if val == nil {
+		return true
+	}
+	v := reflect.ValueOf(val)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
 }
 
 func setupDefaults() {
