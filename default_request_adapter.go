@@ -198,11 +198,19 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
+	prepareWriterRegistry(true)
+	prepareParseRegistry(true)
+}
+
+func prepareWriterRegistry(clearExisting bool) bool {
 	writerReg := absser.DefaultSerializationWriterFactoryInstance
-	clearOrInitRegistry(
+	return configureRegistry(
 		writerReg,
 		writerReg == nil,
-		func() { absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry() },
+		clearExisting,
+		func() {
+			absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+		},
 		func(r *absser.SerializationWriterFactoryRegistry) map[string]absser.SerializationWriterFactory {
 			return r.ContentTypeAssociatedFactories
 		},
@@ -210,11 +218,14 @@ func ResetDefaults() {
 			r.ContentTypeAssociatedFactories = m
 		},
 	)
+}
 
+func prepareParseRegistry(clearExisting bool) bool {
 	parseReg := absser.DefaultParseNodeFactoryInstance
-	clearOrInitRegistry(
+	return configureRegistry(
 		parseReg,
 		parseReg == nil,
+		clearExisting,
 		func() { absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry() },
 		func(r *absser.ParseNodeFactoryRegistry) map[string]absser.ParseNodeFactory {
 			return r.ContentTypeAssociatedFactories
@@ -225,28 +236,33 @@ func ResetDefaults() {
 	)
 }
 
-func clearOrInitRegistry[R sync.Locker, F any](
+func configureRegistry[R sync.Locker, F any](
 	reg R,
-	isNil bool,
+	isNilReg bool,
+	clearExisting bool,
 	initFn func(),
 	getMap func(R) map[string]F,
 	setMap func(R, map[string]F),
-) {
-	if isNil {
+) bool {
+	if isNilReg {
 		initFn()
-		return
+		return true
 	}
 	reg.Lock()
 	defer reg.Unlock()
 
 	factories := getMap(reg)
-	if factories != nil {
+	if factories == nil {
+		setMap(reg, make(map[string]F))
+		return true
+	}
+	if clearExisting {
 		for k := range factories {
 			delete(factories, k)
 		}
-	} else {
-		setMap(reg, make(map[string]F))
+		return true
 	}
+	return false
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
@@ -299,17 +315,8 @@ func isNilValue(val any) bool {
 }
 
 func setupDefaults() {
-	recreatedWriters := false
-	if absser.DefaultSerializationWriterFactoryInstance == nil {
-		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
-		recreatedWriters = true
-	}
-
-	recreatedParsers := false
-	if absser.DefaultParseNodeFactoryInstance == nil {
-		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
-		recreatedParsers = true
-	}
+	recreatedWriters := prepareWriterRegistry(false)
+	recreatedParsers := prepareParseRegistry(false)
 
 	setupDefaultsOnce.Do(func() {
 		registerDefaultSerializers()
