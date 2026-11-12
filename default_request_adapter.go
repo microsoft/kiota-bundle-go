@@ -52,10 +52,10 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
-	if serializationWriterFactory == nil {
+	if isNilValue(serializationWriterFactory) {
 		serializationWriterFactory = absser.DefaultSerializationWriterFactoryInstance
 	}
-	if parseNodeFactory == nil {
+	if isNilValue(parseNodeFactory) {
 		parseNodeFactory = absser.DefaultParseNodeFactoryInstance
 	}
 	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
