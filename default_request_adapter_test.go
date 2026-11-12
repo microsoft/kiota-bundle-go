@@ -800,3 +800,20 @@ func TestAdapterFallsBackToDefaultParseNodeFactoryOnTypedNil(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, rootNode)
 }
+
+func TestAdapterFallsBackToDefaultSerializationWriterFactoryOnTypedNil(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	var typedNilWriterFactory *serjson.JsonSerializationWriterFactory
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authProvider, nil, typedNilWriterFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Equal(t, absser.DefaultSerializationWriterFactoryInstance, adapter.GetSerializationWriterFactory())
+
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+}
