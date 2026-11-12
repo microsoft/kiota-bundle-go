@@ -734,3 +734,51 @@ func TestConcurrentFactoryAccessors(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestAdapterThrowsErrorOnTypedNilAuthProvider(t *testing.T) {
+	var typedNilAuth *absauth.ApiKeyAuthenticationProvider
+
+	testCases := []struct {
+		name      string
+		construct func() (*DefaultRequestAdapter, error)
+	}{
+		{
+			name: "NewDefaultRequestAdapter",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapter(typedNilAuth)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactory",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactory(typedNilAuth, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(typedNilAuth, nil, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(typedNilAuth, nil, nil, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(typedNilAuth, nil, nil, nil, khttp.ObservabilityOptions{})
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, err := tc.construct()
+			assert.Error(t, err)
+			assert.Nil(t, adapter)
+		})
+	}
+}
