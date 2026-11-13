@@ -14,6 +14,7 @@ import (
 	absser "github.com/microsoft/kiota-abstractions-go/serialization"
 	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
+	serjson "github.com/microsoft/kiota-serialization-json-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -435,14 +436,6 @@ func TestSetupDefaultsRecreatesAndReregistersClearedSingletonsWithoutResetDefaul
 	assert.NotEmpty(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
 	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
-
-	// Adapter creation must succeed and contain default serializers & deserializers
-	authProvider := &absauth.AnonymousAuthenticationProvider{}
-	adapter, err := NewDefaultRequestAdapter(authProvider)
-	assert.NoError(t, err)
-	assert.NotNil(t, adapter)
-	assert.Equal(t, absser.DefaultSerializationWriterFactoryInstance, adapter.GetSerializationWriterFactory())
-	assert.Equal(t, absser.DefaultParseNodeFactoryInstance, adapter.GetParseNodeFactory())
 }
 
 func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
@@ -733,4 +726,138 @@ func TestConcurrentFactoryAccessors(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestAdapterThrowsErrorOnTypedNilAuthProvider(t *testing.T) {
+	var typedNilAuth *absauth.ApiKeyAuthenticationProvider
+
+	testCases := []struct {
+		name      string
+		construct func() (*DefaultRequestAdapter, error)
+	}{
+		{
+			name: "NewDefaultRequestAdapter",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapter(typedNilAuth)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactory",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactory(typedNilAuth, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(typedNilAuth, nil, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(typedNilAuth, nil, nil, nil)
+			},
+		},
+		{
+			name: "NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions",
+			construct: func() (*DefaultRequestAdapter, error) {
+				return NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(typedNilAuth, nil, nil, nil, khttp.ObservabilityOptions{})
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter, err := tc.construct()
+			assert.Error(t, err)
+			assert.Nil(t, adapter)
+		})
+	}
+}
+
+func TestAdapterFallsBackToDefaultParseNodeFactoryOnTypedNil(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	var typedNilParseFactory *serjson.JsonParseNodeFactory
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactory(authProvider, typedNilParseFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Equal(t, absser.DefaultParseNodeFactoryInstance, adapter.GetParseNodeFactory())
+
+	rootNode, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"key":"value"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, rootNode)
+}
+
+func TestAdapterFallsBackToDefaultSerializationWriterFactoryOnTypedNil(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	var typedNilWriterFactory *serjson.JsonSerializationWriterFactory
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authProvider, nil, typedNilWriterFactory)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Equal(t, absser.DefaultSerializationWriterFactoryInstance, adapter.GetSerializationWriterFactory())
+
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+}
+
+func TestSetupDefaultsWithNilWriterRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	absser.DefaultSerializationWriterFactoryInstance = &absser.SerializationWriterFactoryRegistry{}
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+
+	writer, err := absser.DefaultSerializationWriterFactoryInstance.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+}
+
+func TestSetupDefaultsWithNilParseRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	absser.DefaultParseNodeFactoryInstance = &absser.ParseNodeFactoryRegistry{}
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+
+	rootNode, err := absser.DefaultParseNodeFactoryInstance.GetRootParseNode("application/json", []byte(`{"status":"ok"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, rootNode)
+}
+
+func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	customWriter := absser.NewSerializationWriterFactoryRegistry()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-custom"] = customWriter
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = nil
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	// Unaffected writer registry keeps custom registrations.
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/x-custom")
+	// Nil parser map is re-initialized and re-registered with default deserializers.
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 }

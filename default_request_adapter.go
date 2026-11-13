@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	nethttp "net/http"
+	"reflect"
 	"sync"
 
 	abs "github.com/microsoft/kiota-abstractions-go"
@@ -44,17 +45,17 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions creates a new DefaultRequestAdapter with the given parameters including observability options
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client, observabilityOptions khttp.ObservabilityOptions) (*DefaultRequestAdapter, error) {
-	if authenticationProvider == nil {
+	if isNilValue(authenticationProvider) {
 		return nil, errors.New("authenticationProvider cannot be nil")
 	}
 	SetupDefaults()
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
-	if serializationWriterFactory == nil {
+	if isNilValue(serializationWriterFactory) {
 		serializationWriterFactory = absser.DefaultSerializationWriterFactoryInstance
 	}
-	if parseNodeFactory == nil {
+	if isNilValue(parseNodeFactory) {
 		parseNodeFactory = absser.DefaultParseNodeFactoryInstance
 	}
 	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
@@ -197,11 +198,19 @@ func ResetDefaults() {
 	setupDefaultsOnce = sync.Once{}
 	store.BackingStoreFactoryInstance = store.NewInMemoryBackingStore
 
+	prepareWriterRegistry(true)
+	prepareParseRegistry(true)
+}
+
+func prepareWriterRegistry(clearExisting bool) bool {
 	writerReg := absser.DefaultSerializationWriterFactoryInstance
-	clearOrInitRegistry(
+	return configureRegistry(
 		writerReg,
 		writerReg == nil,
-		func() { absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry() },
+		clearExisting,
+		func() {
+			absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+		},
 		func(r *absser.SerializationWriterFactoryRegistry) map[string]absser.SerializationWriterFactory {
 			return r.ContentTypeAssociatedFactories
 		},
@@ -209,11 +218,14 @@ func ResetDefaults() {
 			r.ContentTypeAssociatedFactories = m
 		},
 	)
+}
 
+func prepareParseRegistry(clearExisting bool) bool {
 	parseReg := absser.DefaultParseNodeFactoryInstance
-	clearOrInitRegistry(
+	return configureRegistry(
 		parseReg,
 		parseReg == nil,
+		clearExisting,
 		func() { absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry() },
 		func(r *absser.ParseNodeFactoryRegistry) map[string]absser.ParseNodeFactory {
 			return r.ContentTypeAssociatedFactories
@@ -224,28 +236,32 @@ func ResetDefaults() {
 	)
 }
 
-func clearOrInitRegistry[R sync.Locker, F any](
+func configureRegistry[R sync.Locker, F any](
 	reg R,
-	isNil bool,
+	isNilReg bool,
+	clearExisting bool,
 	initFn func(),
 	getMap func(R) map[string]F,
 	setMap func(R, map[string]F),
-) {
-	if isNil {
+) bool {
+	if isNilReg {
 		initFn()
-		return
+		return true
 	}
 	reg.Lock()
 	defer reg.Unlock()
 
 	factories := getMap(reg)
-	if factories != nil {
+	if factories == nil {
+		setMap(reg, make(map[string]F))
+		return true
+	}
+	if clearExisting {
 		for k := range factories {
 			delete(factories, k)
 		}
-	} else {
-		setMap(reg, make(map[string]F))
 	}
+	return false
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
@@ -284,18 +300,22 @@ func registerDefaultDeserializers() {
 	})
 }
 
-func setupDefaults() {
-	recreatedWriters := false
-	if absser.DefaultSerializationWriterFactoryInstance == nil {
-		absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
-		recreatedWriters = true
+func isNilValue(val any) bool {
+	if val == nil {
+		return true
 	}
+	v := reflect.ValueOf(val)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
 
-	recreatedParsers := false
-	if absser.DefaultParseNodeFactoryInstance == nil {
-		absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
-		recreatedParsers = true
-	}
+func setupDefaults() {
+	recreatedWriters := prepareWriterRegistry(false)
+	recreatedParsers := prepareParseRegistry(false)
 
 	setupDefaultsOnce.Do(func() {
 		registerDefaultSerializers()
