@@ -374,7 +374,7 @@ func TestSetupDefaultsWithNilFactoryInstances(t *testing.T) {
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
-func TestSetupDefaultsRecreatesNilSingletonsWithoutResetDefaults(t *testing.T) {
+func TestSetupDefaultsRecreatesAndReregistersClearedSingletonsWithoutResetDefaults(t *testing.T) {
 	defer func() {
 		ResetDefaults()
 		SetupDefaults()
@@ -396,10 +396,16 @@ func TestSetupDefaultsRecreatesNilSingletonsWithoutResetDefaults(t *testing.T) {
 	// Call SetupDefaults again
 	SetupDefaults()
 
-	// Verify writer registry was recreated (not nil) but defaults are NOT
-	// re-registered since setupDefaultsOnce already executed. Callers should
-	// use ResetDefaults to fully restore default registrations.
+	// Verify writer registry was recreated AND re-registered with defaults
 	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance)
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerMap := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, serializerMap)
+	assert.Contains(t, serializerMap, "application/json")
+	assert.Contains(t, serializerMap, "text/plain")
+	assert.Contains(t, serializerMap, "application/x-www-form-urlencoded")
+	assert.Contains(t, serializerMap, "multipart/form-data")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
 	// Verify unaffected parse node registry was preserved (including custom factory)
 	absser.DefaultParseNodeFactoryInstance.Lock()
@@ -408,6 +414,28 @@ func TestSetupDefaultsRecreatesNilSingletonsWithoutResetDefaults(t *testing.T) {
 	assert.Contains(t, deserializerMap, "application/json")
 	assert.Contains(t, deserializerMap, customContentType)
 	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// 3. Clear parse node factory singleton WITHOUT calling ResetDefaults
+	absser.DefaultParseNodeFactoryInstance = nil
+
+	// Call SetupDefaults again
+	SetupDefaults()
+
+	// Verify parse node registry was recreated AND re-registered with defaults
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance)
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerMap2 := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, deserializerMap2)
+	assert.Contains(t, deserializerMap2, "application/json")
+	assert.Contains(t, deserializerMap2, "text/plain")
+	assert.Contains(t, deserializerMap2, "application/x-www-form-urlencoded")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// Verify unaffected writer registry remains intact
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	assert.NotEmpty(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories)
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 }
 
 func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
@@ -829,8 +857,7 @@ func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
 
 	// Unaffected writer registry keeps custom registrations.
 	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/x-custom")
-	// Nil parser map is re-initialized to an empty map (no panic), but defaults
-	// are not re-registered because setupDefaultsOnce has already executed.
-	// Callers should use ResetDefaults to fully restore default registrations.
+	// Nil parser map is re-initialized and re-registered with default deserializers.
 	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 }
