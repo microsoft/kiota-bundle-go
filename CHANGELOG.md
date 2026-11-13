@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.2](https://github.com/microsoft/kiota-bundle-go/compare/v1.5.1...v1.5.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **bundle:** ensure registry singletons are initialized before SetupDefaults registration ([ad8fbbe](https://github.com/microsoft/kiota-bundle-go/commit/ad8fbbe711b7909bc09d6f8a35d88f2ed18d1108))
+* **bundle:** fall back to default registries for typed-nil factories ([f2ac1f5](https://github.com/microsoft/kiota-bundle-go/commit/f2ac1f54bac14bb25712742ca86b917c734b5014))
+* **bundle:** guard and restore registry singletons in ResetDefaults and SetupDefaults ([5eab92f](https://github.com/microsoft/kiota-bundle-go/commit/5eab92ff6bc4d5f3087e8e82bb12aaf925c9ca72))
+* **bundle:** guard typed-nil constructor inputs and nil registry maps in SetupDefaults ([946e267](https://github.com/microsoft/kiota-bundle-go/commit/946e26798df5d89d409c05619e1c9fe57c094d1e))
+* **bundle:** initialize nil registry maps in setupDefaults ([0ae6250](https://github.com/microsoft/kiota-bundle-go/commit/0ae6250915ec87e9b2d99b73aa182ebb59a07a39))
+* **bundle:** re-register defaults when cleared factory singletons are recreated ([22070c6](https://github.com/microsoft/kiota-bundle-go/commit/22070c62effb93bc20de0c32dcd174752b02eb81))
+* **bundle:** reject typed-nil authenticationProvider in adapter constructor ([d55fe55](https://github.com/microsoft/kiota-bundle-go/commit/d55fe55112073031b1a8d97681149cb345170e8a))
+* **bundle:** repopulate defaults when registries or maps are recreated in SetupDefaults ([4e9bdec](https://github.com/microsoft/kiota-bundle-go/commit/4e9bdec528e519a075809b3417ff3222ba2c0494))
+* **bundle:** restore and guard default factory registries in ResetDefaults ([96dfc63](https://github.com/microsoft/kiota-bundle-go/commit/96dfc633d0530679224ca456a2f69b4c9f5a97a8))
+* **bundle:** snapshot registry singletons against TOCTOU and assert content types in tests ([241dce6](https://github.com/microsoft/kiota-bundle-go/commit/241dce646289473597e41c7dc0fd173cf15cfd4b))
+
 ## [1.5.1](https://github.com/microsoft/kiota-bundle-go/compare/v1.5.0...v1.5.1) (2026-11-06)
 
 
