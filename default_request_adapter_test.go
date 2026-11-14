@@ -911,3 +911,29 @@ func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
 	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
 	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 }
+
+func TestSetupDefaultsRepopulatesEmptyWriterRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	// Clear writer registry to an empty (non-nil) map without calling ResetDefaults.
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerMap := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, serializerMap)
+	assert.Contains(t, serializerMap, "application/json")
+	assert.Contains(t, serializerMap, "text/plain")
+	assert.Contains(t, serializerMap, "application/x-www-form-urlencoded")
+	assert.Contains(t, serializerMap, "multipart/form-data")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+}
