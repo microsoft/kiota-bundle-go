@@ -670,6 +670,49 @@ func TestDefaultRequestAdapterSendMethods(t *testing.T) {
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
 }
 
+func TestUninitializedDefaultRequestAdapterSendMethods(t *testing.T) {
+	uninitAdapter := &DefaultRequestAdapter{}
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/me")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	resp, err := uninitAdapter.Send(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	respColl, err := uninitAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	respEnum, err := uninitAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnum)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	respEnumColl, err := uninitAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnumColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	respPrim, err := uninitAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrim)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	respPrimColl, err := uninitAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrimColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+
+	err = uninitAdapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+}
+
 func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
 
