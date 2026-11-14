@@ -112,66 +112,94 @@ func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFac
 	a.NetHttpRequestAdapter.EnableBackingStore(factory)
 }
 
-// ConvertToNativeRequest converts the given RequestInformation into a native HTTP request or returns an error if the receiver is nil.
+func (a *DefaultRequestAdapter) isUninitialized() bool {
+	return a.GetSerializationWriterFactory() == nil || a.GetParseNodeFactory() == nil
+}
+
+// ConvertToNativeRequest converts the given RequestInformation into a native HTTP request or returns an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) ConvertToNativeRequest(ctx context.Context, requestInfo *abs.RequestInformation) (any, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.ConvertToNativeRequest(ctx, requestInfo)
 }
 
-// Send executes the HTTP request specified by the given RequestInformation and returns the deserialized response model or an error if the receiver is nil.
+// Send executes the HTTP request specified by the given RequestInformation and returns the deserialized response model or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) Send(ctx context.Context, requestInfo *abs.RequestInformation, constructor absser.ParsableFactory, errorMappings abs.ErrorMappings) (absser.Parsable, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.Send(ctx, requestInfo, constructor, errorMappings)
 }
 
-// SendEnum executes the HTTP request specified by the given RequestInformation and returns the deserialized response model or an error if the receiver is nil.
+// SendEnum executes the HTTP request specified by the given RequestInformation and returns the deserialized response model or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendEnum(ctx context.Context, requestInfo *abs.RequestInformation, parser absser.EnumFactory, errorMappings abs.ErrorMappings) (any, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.SendEnum(ctx, requestInfo, parser, errorMappings)
 }
 
-// SendCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized response model collection or an error if the receiver is nil.
+// SendCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized response model collection or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendCollection(ctx context.Context, requestInfo *abs.RequestInformation, constructor absser.ParsableFactory, errorMappings abs.ErrorMappings) ([]absser.Parsable, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.SendCollection(ctx, requestInfo, constructor, errorMappings)
 }
 
-// SendEnumCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized response model collection or an error if the receiver is nil.
+// SendEnumCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized response model collection or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendEnumCollection(ctx context.Context, requestInfo *abs.RequestInformation, parser absser.EnumFactory, errorMappings abs.ErrorMappings) ([]any, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.SendEnumCollection(ctx, requestInfo, parser, errorMappings)
 }
 
-// SendPrimitive executes the HTTP request specified by the given RequestInformation and returns the deserialized primitive response model or an error if the receiver is nil.
+// SendPrimitive executes the HTTP request specified by the given RequestInformation and returns the deserialized primitive response model or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendPrimitive(ctx context.Context, requestInfo *abs.RequestInformation, typeName string, errorMappings abs.ErrorMappings) (any, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.SendPrimitive(ctx, requestInfo, typeName, errorMappings)
 }
 
-// SendPrimitiveCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized primitive response model collection or an error if the receiver is nil.
+// SendPrimitiveCollection executes the HTTP request specified by the given RequestInformation and returns the deserialized primitive response model collection or an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendPrimitiveCollection(ctx context.Context, requestInfo *abs.RequestInformation, typeName string, errorMappings abs.ErrorMappings) ([]any, error) {
 	if a == nil {
 		return nil, errors.New("request adapter cannot be nil")
 	}
+	if a.isUninitialized() {
+		return nil, errors.New("request adapter is not initialized")
+	}
 	return a.NetHttpRequestAdapter.SendPrimitiveCollection(ctx, requestInfo, typeName, errorMappings)
 }
 
-// SendNoContent executes the HTTP request specified by the given RequestInformation with no return content or returns an error if the receiver is nil.
+// SendNoContent executes the HTTP request specified by the given RequestInformation with no return content or returns an error if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SendNoContent(ctx context.Context, requestInfo *abs.RequestInformation, errorMappings abs.ErrorMappings) error {
 	if a == nil {
 		return errors.New("request adapter cannot be nil")
+	}
+	if a.isUninitialized() {
+		return errors.New("request adapter is not initialized")
 	}
 	return a.NetHttpRequestAdapter.SendNoContent(ctx, requestInfo, errorMappings)
 }
@@ -260,8 +288,9 @@ func configureRegistry[R sync.Locker, F any](
 		for k := range factories {
 			delete(factories, k)
 		}
+		return false
 	}
-	return false
+	return len(factories) == 0
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
