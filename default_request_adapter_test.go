@@ -600,6 +600,13 @@ func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, converted)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+
+	// ConvertToNativeRequest on uninitialized adapter returns error and does not panic
+	uninitAdapter := &DefaultRequestAdapter{}
+	uninitConverted, err := uninitAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
+	assert.Error(t, err)
+	assert.Nil(t, uninitConverted)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
 }
 
 func TestDefaultRequestAdapterSendMethods(t *testing.T) {
