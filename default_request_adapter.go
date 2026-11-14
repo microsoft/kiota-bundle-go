@@ -288,8 +288,9 @@ func configureRegistry[R sync.Locker, F any](
 		for k := range factories {
 			delete(factories, k)
 		}
+		return false
 	}
-	return false
+	return len(factories) == 0
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
