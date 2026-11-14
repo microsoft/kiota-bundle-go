@@ -937,3 +937,28 @@ func TestSetupDefaultsRepopulatesEmptyWriterRegistryMap(t *testing.T) {
 	assert.Contains(t, serializerMap, "multipart/form-data")
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 }
+
+func TestSetupDefaultsRepopulatesEmptyParseNodeRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	// Clear parse node registry to an empty (non-nil) map without calling ResetDefaults.
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerMap := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, deserializerMap)
+	assert.Contains(t, deserializerMap, "application/json")
+	assert.Contains(t, deserializerMap, "text/plain")
+	assert.Contains(t, deserializerMap, "application/x-www-form-urlencoded")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+}
