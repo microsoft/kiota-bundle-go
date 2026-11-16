@@ -465,41 +465,49 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, converted)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	// Send methods on nil adapter must return an error and not panic
 	resp, err := nilAdapter.Send(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnum)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnumColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrim)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrimColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
@@ -600,6 +608,7 @@ func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, converted)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	// ConvertToNativeRequest on uninitialized adapter returns error and does not panic
 	uninitAdapter := &DefaultRequestAdapter{}
@@ -607,6 +616,7 @@ func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, uninitConverted)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 }
 
 func TestDefaultRequestAdapterSendMethods(t *testing.T) {
@@ -646,35 +656,42 @@ func TestDefaultRequestAdapterSendMethods(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnum)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnumColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrim)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrimColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 }
 
 func TestUninitializedDefaultRequestAdapterSendMethods(t *testing.T) {
@@ -689,35 +706,42 @@ func TestUninitializedDefaultRequestAdapterSendMethods(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	respColl, err := uninitAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respColl)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	respEnum, err := uninitAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnum)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	respEnumColl, err := uninitAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnumColl)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	respPrim, err := uninitAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrim)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	respPrimColl, err := uninitAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrimColl)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 
 	err = uninitAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 }
 
 func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
