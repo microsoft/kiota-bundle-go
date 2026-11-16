@@ -465,41 +465,49 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, converted)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	// Send methods on nil adapter must return an error and not panic
 	resp, err := nilAdapter.Send(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnum)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnumColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrim)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrimColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
@@ -600,6 +608,15 @@ func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, converted)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
+
+	// ConvertToNativeRequest on uninitialized adapter returns error and does not panic
+	uninitAdapter := &DefaultRequestAdapter{}
+	uninitConverted, err := uninitAdapter.ConvertToNativeRequest(context.Background(), reqInfo)
+	assert.Error(t, err)
+	assert.Nil(t, uninitConverted)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 }
 
 func TestDefaultRequestAdapterSendMethods(t *testing.T) {
@@ -639,35 +656,92 @@ func TestDefaultRequestAdapterSendMethods(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, resp)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respColl, err := nilAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnum, err := nilAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnum)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respEnumColl, err := nilAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
 	assert.Error(t, err)
 	assert.Nil(t, respEnumColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrim, err := nilAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrim)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	respPrimColl, err := nilAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
 	assert.Error(t, err)
 	assert.Nil(t, respPrimColl)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 
 	err = nilAdapter.SendNoContent(context.Background(), reqInfo, nil)
 	assert.Error(t, err)
 	assert.Equal(t, "request adapter cannot be nil", err.Error())
+	assert.ErrorIs(t, err, ErrNilRequestAdapter)
+}
+
+func TestUninitializedDefaultRequestAdapterSendMethods(t *testing.T) {
+	uninitAdapter := &DefaultRequestAdapter{}
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/me")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	resp, err := uninitAdapter.Send(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	respColl, err := uninitAdapter.SendCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	respEnum, err := uninitAdapter.SendEnum(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnum)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	respEnumColl, err := uninitAdapter.SendEnumCollection(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, respEnumColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	respPrim, err := uninitAdapter.SendPrimitive(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrim)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	respPrimColl, err := uninitAdapter.SendPrimitiveCollection(context.Background(), reqInfo, "string", nil)
+	assert.Error(t, err)
+	assert.Nil(t, respPrimColl)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	err = uninitAdapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.Error(t, err)
+	assert.Equal(t, "request adapter is not initialized", err.Error())
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 }
 
 func TestDefaultRequestAdapterGetParseNodeFactory(t *testing.T) {
@@ -860,4 +934,55 @@ func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
 	// Nil parser map is re-initialized and re-registered with default deserializers.
 	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories)
 	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+}
+
+func TestSetupDefaultsRepopulatesEmptyWriterRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	// Clear writer registry to an empty (non-nil) map without calling ResetDefaults.
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.SerializationWriterFactory)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerMap := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, serializerMap)
+	assert.Contains(t, serializerMap, "application/json")
+	assert.Contains(t, serializerMap, "text/plain")
+	assert.Contains(t, serializerMap, "application/x-www-form-urlencoded")
+	assert.Contains(t, serializerMap, "multipart/form-data")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+}
+
+func TestSetupDefaultsRepopulatesEmptyParseNodeRegistryMap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	SetupDefaults()
+
+	// Clear parse node registry to an empty (non-nil) map without calling ResetDefaults.
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = make(map[string]absser.ParseNodeFactory)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerMap := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories
+	assert.NotEmpty(t, deserializerMap)
+	assert.Contains(t, deserializerMap, "application/json")
+	assert.Contains(t, deserializerMap, "text/plain")
+	assert.Contains(t, deserializerMap, "application/x-www-form-urlencoded")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
