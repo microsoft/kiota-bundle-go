@@ -47,20 +47,25 @@ func TestDefaultRequestAdapterHonoursInterface(t *testing.T) {
 func TestAdapterThrowsErrorOnNillAuthProvider(t *testing.T) {
 	_, err := NewDefaultRequestAdapter(nil)
 	assert.Error(t, err) // adapter can't be nill
+	assert.ErrorIs(t, err, ErrNilAuthenticationProvider)
 }
 
 func TestAdapterThrowsErrorOnNilAuthProviderAcrossConstructors(t *testing.T) {
 	_, err1 := NewDefaultRequestAdapterWithParseNodeFactory(nil, nil)
 	assert.Error(t, err1)
+	assert.ErrorIs(t, err1, ErrNilAuthenticationProvider)
 
 	_, err2 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(nil, nil, nil)
 	assert.Error(t, err2)
+	assert.ErrorIs(t, err2, ErrNilAuthenticationProvider)
 
 	_, err3 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(nil, nil, nil, nil)
 	assert.Error(t, err3)
+	assert.ErrorIs(t, err3, ErrNilAuthenticationProvider)
 
 	_, err4 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(nil, nil, nil, nil, khttp.ObservabilityOptions{})
 	assert.Error(t, err4)
+	assert.ErrorIs(t, err4, ErrNilAuthenticationProvider)
 }
 
 func TestAerializersAreRegisteredAsExpected(t *testing.T) {
@@ -895,8 +900,29 @@ func TestAdapterThrowsErrorOnTypedNilAuthProvider(t *testing.T) {
 			adapter, err := tc.construct()
 			assert.Error(t, err)
 			assert.Nil(t, adapter)
+			assert.ErrorIs(t, err, ErrNilAuthenticationProvider)
 		})
 	}
+}
+
+func TestUninitializedDefaultRequestAdapterWithTypedNilFactories(t *testing.T) {
+	uninitAdapter := &DefaultRequestAdapter{}
+	assert.True(t, uninitAdapter.isUninitialized())
+
+	reqInfo := abs.NewRequestInformation()
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/me")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+	reqInfo.Method = abs.GET
+
+	resp, err := uninitAdapter.Send(context.Background(), reqInfo, nil, nil)
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
+
+	err = uninitAdapter.SendNoContent(context.Background(), reqInfo, nil)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrUninitializedRequestAdapter)
 }
 
 func TestAdapterFallsBackToDefaultParseNodeFactoryOnTypedNil(t *testing.T) {
