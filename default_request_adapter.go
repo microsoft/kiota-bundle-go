@@ -111,9 +111,9 @@ func (a *DefaultRequestAdapter) GetParseNodeFactory() absser.ParseNodeFactory {
 	return a.NetHttpRequestAdapter.GetParseNodeFactory()
 }
 
-// EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use or performs a no-op if the receiver is nil.
+// EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use or performs a no-op if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFactory) {
-	if a == nil {
+	if a == nil || a.isUninitialized() {
 		return
 	}
 	a.NetHttpRequestAdapter.EnableBackingStore(factory)
