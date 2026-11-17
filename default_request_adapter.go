@@ -59,15 +59,15 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if isNilValue(authenticationProvider) {
 		return nil, ErrNilAuthenticationProvider
 	}
-	ensureDefaults()
+	defaultWriterFactory, defaultParseFactory := ensureDefaults()
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
 	if isNilValue(serializationWriterFactory) {
-		serializationWriterFactory = absser.DefaultSerializationWriterFactoryInstance
+		serializationWriterFactory = defaultWriterFactory
 	}
 	if isNilValue(parseNodeFactory) {
-		parseNodeFactory = absser.DefaultParseNodeFactoryInstance
+		parseNodeFactory = defaultParseFactory
 	}
 	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
 	if err != nil {
@@ -202,7 +202,7 @@ func (a *DefaultRequestAdapter) SendNoContent(ctx context.Context, requestInfo *
 }
 
 var (
-	setupDefaultsLock    sync.Mutex
+	setupDefaultsLock   sync.Mutex
 	defaultsInitialized bool
 )
 
@@ -349,15 +349,23 @@ func SetupDefaults() {
 	defaultsInitialized = true
 }
 
-func ensureDefaults() {
+func ensureDefaults() (*absser.SerializationWriterFactoryRegistry, *absser.ParseNodeFactoryRegistry) {
 	setupDefaultsLock.Lock()
 	defer setupDefaultsLock.Unlock()
-	if !defaultsInitialized ||
-		absser.DefaultSerializationWriterFactoryInstance == nil ||
-		absser.DefaultParseNodeFactoryInstance == nil {
+	if !defaultsInitialized {
 		setupDefaults()
 		defaultsInitialized = true
+	} else {
+		if absser.DefaultSerializationWriterFactoryInstance == nil {
+			absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+			registerDefaultSerializers()
+		}
+		if absser.DefaultParseNodeFactoryInstance == nil {
+			absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+			registerDefaultDeserializers()
+		}
 	}
+	return absser.DefaultSerializationWriterFactoryInstance, absser.DefaultParseNodeFactoryInstance
 }
 
 func registerDefaultSerializers() {
@@ -401,20 +409,13 @@ func isNilValue(val any) bool {
 }
 
 func setupDefaults() {
-	recreatedWriters := prepareWriterRegistry(false)
-	recreatedParsers := prepareParseRegistry(false)
+	needsWriters := prepareWriterRegistry(false)
+	needsParsers := prepareParseRegistry(false)
 
-	if !defaultsInitialized {
-		registerDefaultSerializers()
-		registerDefaultDeserializers()
-		recreatedWriters = false
-		recreatedParsers = false
-	}
-
-	if recreatedWriters {
+	if !defaultsInitialized || needsWriters {
 		registerDefaultSerializers()
 	}
-	if recreatedParsers {
+	if !defaultsInitialized || needsParsers {
 		registerDefaultDeserializers()
 	}
 }

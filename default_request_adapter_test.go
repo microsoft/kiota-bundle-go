@@ -531,7 +531,7 @@ func TestUninitializedDefaultRequestAdapterBaseUrl(t *testing.T) {
 }
 
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
-// are serialized via setupDefaultsLock and do not race with each other or corrupt sync.Once state.
+// are serialized via setupDefaultsLock and do not race with each other or corrupt initialization state.
 func TestConcurrentResetAndSetupDefaults(t *testing.T) {
 	const iterations = 15
 	var wg sync.WaitGroup
@@ -993,7 +993,7 @@ func TestSetupDefaultsReinitializesNilMapWithoutResetDefaults(t *testing.T) {
 	ResetDefaults()
 	t.Cleanup(ResetDefaults)
 
-	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	// Run initial SetupDefaults so defaultsInitialized is true.
 	SetupDefaults()
 
 	customWriter := absser.NewSerializationWriterFactoryRegistry()
@@ -1015,7 +1015,7 @@ func TestSetupDefaultsRepopulatesEmptyWriterRegistryMap(t *testing.T) {
 	ResetDefaults()
 	t.Cleanup(ResetDefaults)
 
-	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	// Run initial SetupDefaults so defaultsInitialized is true.
 	SetupDefaults()
 
 	// Clear writer registry to an empty (non-nil) map without calling ResetDefaults.
@@ -1041,7 +1041,7 @@ func TestSetupDefaultsRepopulatesEmptyParseNodeRegistryMap(t *testing.T) {
 	ResetDefaults()
 	t.Cleanup(ResetDefaults)
 
-	// Run initial SetupDefaults so setupDefaultsOnce has executed.
+	// Run initial SetupDefaults so defaultsInitialized is true.
 	SetupDefaults()
 
 	// Clear parse node registry to an empty (non-nil) map without calling ResetDefaults.
@@ -1114,7 +1114,7 @@ func TestSetupDefaultsRestoresMissingDefaultSerializersWhenPartiallyPopulated(t 
 
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
 	assert.Same(t, customJsonWriter, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"])
-	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	assert.NotNil(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"])
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 }
 
@@ -1169,7 +1169,7 @@ func TestSetupDefaultsRestoresMissingDefaultDeserializersWhenPartiallyPopulated(
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
 	assert.Same(t, customJsonParser, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"])
-	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	assert.NotNil(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"])
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
 
@@ -1179,28 +1179,43 @@ func TestSetupDefaultsCleansNilEntriesAndRestoresDefaults(t *testing.T) {
 
 	SetupDefaults()
 
-	// Set nil factories for default content types
+	// Set nil and typed-nil factories for default content types while preserving a custom override on another default.
+	customTextWriter := absser.NewSerializationWriterFactoryRegistry()
+	customTextParser := absser.NewParseNodeFactoryRegistry()
+	var typedNilWriter *serjson.JsonSerializationWriterFactory
+	var typedNilParser *serjson.JsonParseNodeFactory
+
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
 	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"] = nil
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = typedNilWriter
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"] = customTextWriter
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
 	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"] = nil
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = typedNilParser
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"] = customTextParser
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 
-	// SetupDefaults must clean the nil entries and restore valid factories
+	// SetupDefaults must clean nil and typed-nil entries, restore valid defaults, and preserve custom overrides.
 	assert.NotPanics(t, func() {
 		SetupDefaults()
 	})
 
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
 	writerFactory := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"]
-	assert.NotNil(t, writerFactory)
+	formWriterFactory := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"]
+	assert.False(t, isNilValue(writerFactory))
+	assert.False(t, isNilValue(formWriterFactory))
+	assert.Same(t, customTextWriter, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"])
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
 	parseFactory := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"]
-	assert.NotNil(t, parseFactory)
+	formParseFactory := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"]
+	assert.False(t, isNilValue(parseFactory))
+	assert.False(t, isNilValue(formParseFactory))
+	assert.Same(t, customTextParser, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"])
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 
 	writer, err := absser.DefaultSerializationWriterFactoryInstance.GetSerializationWriter("application/json")
@@ -1210,4 +1225,94 @@ func TestSetupDefaultsCleansNilEntriesAndRestoresDefaults(t *testing.T) {
 	rootNode, err := absser.DefaultParseNodeFactoryInstance.GetRootParseNode("application/json", []byte(`{"status":"clean"}`))
 	assert.NoError(t, err)
 	assert.NotNil(t, rootNode)
+}
+
+func TestNewDefaultRequestAdapterDoesNotMutateActiveRegistriesDuringConcurrentLookups(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	existingAdapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, existingAdapter)
+
+	// Introduce a nil entry and remove an unused default during a quiescent state before concurrent lookups begin.
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-writer"] = nil
+	delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-parser"] = nil
+	delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	const workers = 12
+	const loops = 50
+	var wg sync.WaitGroup
+	wg.Add(workers * 2)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < loops; j++ {
+				w, wErr := existingAdapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+				assert.NoError(t, wErr)
+				assert.NotNil(t, w)
+
+				pn, pErr := existingAdapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"ok":true}`))
+				assert.NoError(t, pErr)
+				assert.NotNil(t, pn)
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for j := 0; j < loops; j++ {
+				adapter, aErr := NewDefaultRequestAdapter(authProvider)
+				assert.NoError(t, aErr)
+				assert.NotNil(t, adapter)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Creating adapters after initialization must not have mutated active registry maps.
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	_, hasNilWriter := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-writer"]
+	_, hasTextWriter := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	assert.True(t, hasNilWriter, "adapter creation must not delete nil entries from active writer registry")
+	assert.False(t, hasTextWriter, "adapter creation must not write missing defaults into active writer registry")
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	_, hasNilParser := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-parser"]
+	_, hasTextParser := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.True(t, hasNilParser, "adapter creation must not delete nil entries from active parse registry")
+	assert.False(t, hasTextParser, "adapter creation must not write missing defaults into active parse registry")
+
+	// If one singleton is nilled, ensureDefaults recreates only that singleton without mutating the other active registry.
+	absser.DefaultSerializationWriterFactoryInstance = nil
+	adapterAfterNilWriter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapterAfterNilWriter)
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	_, stillHasNilParser := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-parser"]
+	_, stillHasTextParser := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.True(t, stillHasNilParser, "recreating nil writer singleton must not mutate active parse registry")
+	assert.False(t, stillHasTextParser, "recreating nil writer singleton must not heal active parse registry")
+
+	// Explicit quiescent SetupDefaults cleans nil entries and restores missing defaults.
+	SetupDefaults()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	_, nilParserAfterHeal := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/x-nil-parser"]
+	_, textParserAfterHeal := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+	assert.False(t, nilParserAfterHeal)
+	assert.True(t, textParserAfterHeal)
 }
