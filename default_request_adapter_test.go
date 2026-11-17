@@ -510,6 +510,21 @@ func TestDefaultRequestAdapterAccessorsAndNilSafety(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNilRequestAdapter)
 }
 
+func TestUninitializedDefaultRequestAdapterBaseUrl(t *testing.T) {
+	uninitAdapter := &DefaultRequestAdapter{}
+
+	// GetBaseUrl on uninitialized adapter returns empty string
+	assert.Equal(t, "", uninitAdapter.GetBaseUrl())
+
+	// SetBaseUrl on uninitialized adapter is a safe no-op
+	assert.NotPanics(t, func() {
+		uninitAdapter.SetBaseUrl("https://example.com")
+	})
+
+	// BaseUrl remains empty after no-op SetBaseUrl on uninitialized adapter
+	assert.Equal(t, "", uninitAdapter.GetBaseUrl())
+}
+
 // TestConcurrentResetAndSetupDefaults validates that concurrent invocations of ResetDefaults and SetupDefaults
 // are serialized via setupDefaultsLock and do not race with each other or corrupt sync.Once state.
 func TestConcurrentResetAndSetupDefaults(t *testing.T) {
