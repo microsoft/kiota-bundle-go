@@ -581,6 +581,40 @@ func TestDefaultRequestAdapterEnableBackingStore(t *testing.T) {
 	assert.True(t, isInMemory)
 }
 
+func TestUninitializedDefaultRequestAdapterEnableBackingStore(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	uninitAdapter := &DefaultRequestAdapter{}
+
+	customCalled := false
+	customFactory := func() store.BackingStore {
+		customCalled = true
+		return store.NewInMemoryBackingStore()
+	}
+
+	// Calling EnableBackingStore on uninitialized adapter must be a safe no-op
+	// and must not mutate store.BackingStoreFactoryInstance.
+	assert.NotPanics(t, func() {
+		uninitAdapter.EnableBackingStore(customFactory)
+	})
+
+	assert.Nil(t, uninitAdapter.GetParseNodeFactory())
+	assert.Nil(t, uninitAdapter.GetSerializationWriterFactory())
+
+	// store.BackingStoreFactoryInstance must remain default and customFactory must not be invoked
+	bs := store.BackingStoreFactoryInstance()
+	assert.NotNil(t, bs)
+	assert.False(t, customCalled)
+	_, isInMemory := bs.(*store.InMemoryBackingStore)
+	assert.True(t, isInMemory)
+
+	// Nil factory input on uninitialized adapter must also not panic
+	assert.NotPanics(t, func() {
+		uninitAdapter.EnableBackingStore(nil)
+	})
+}
+
 func TestDefaultRequestAdapterConvertToNativeRequest(t *testing.T) {
 	authProvider := &absauth.AnonymousAuthenticationProvider{}
 	adapter, err := NewDefaultRequestAdapter(authProvider)
