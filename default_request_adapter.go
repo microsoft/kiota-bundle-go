@@ -227,6 +227,45 @@ func ResetDefaults() {
 	prepareParseRegistry(true)
 }
 
+var defaultSerializerContentTypes = [...]string{
+	"application/json",
+	"text/plain",
+	"application/x-www-form-urlencoded",
+	"multipart/form-data",
+}
+
+var defaultDeserializerContentTypes = [...]string{
+	"application/json",
+	"text/plain",
+	"application/x-www-form-urlencoded",
+}
+
+func cleanNilEntries[F any](factories map[string]F) {
+	for k, v := range factories {
+		if isNilValue(v) {
+			delete(factories, k)
+		}
+	}
+}
+
+func hasMissingSerializerDefaults(factories map[string]absser.SerializationWriterFactory) bool {
+	for _, ct := range defaultSerializerContentTypes {
+		if f, ok := factories[ct]; !ok || isNilValue(f) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMissingDeserializerDefaults(factories map[string]absser.ParseNodeFactory) bool {
+	for _, ct := range defaultDeserializerContentTypes {
+		if f, ok := factories[ct]; !ok || isNilValue(f) {
+			return true
+		}
+	}
+	return false
+}
+
 func prepareWriterRegistry(clearExisting bool) bool {
 	writerReg := absser.DefaultSerializationWriterFactoryInstance
 	return configureRegistry(
@@ -242,6 +281,7 @@ func prepareWriterRegistry(clearExisting bool) bool {
 		func(r *absser.SerializationWriterFactoryRegistry, m map[string]absser.SerializationWriterFactory) {
 			r.ContentTypeAssociatedFactories = m
 		},
+		hasMissingSerializerDefaults,
 	)
 }
 
@@ -258,6 +298,7 @@ func prepareParseRegistry(clearExisting bool) bool {
 		func(r *absser.ParseNodeFactoryRegistry, m map[string]absser.ParseNodeFactory) {
 			r.ContentTypeAssociatedFactories = m
 		},
+		hasMissingDeserializerDefaults,
 	)
 }
 
@@ -268,6 +309,7 @@ func configureRegistry[R sync.Locker, F any](
 	initFn func(),
 	getMap func(R) map[string]F,
 	setMap func(R, map[string]F),
+	hasMissing func(map[string]F) bool,
 ) bool {
 	if isNilReg {
 		initFn()
@@ -287,7 +329,8 @@ func configureRegistry[R sync.Locker, F any](
 		}
 		return false
 	}
-	return len(factories) == 0
+	cleanNilEntries(factories)
+	return len(factories) == 0 || hasMissing(factories)
 }
 
 // SetupDefaults registers the default serializers and deserializers in the global registries.
