@@ -1101,6 +1101,21 @@ func TestSetupDefaultsRestoresMissingDefaultSerializersWhenPartiallyPopulated(t 
 	absser.DefaultSerializationWriterFactoryInstance.Lock()
 	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
 	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// Verify that overriding a default content type (e.g. application/json) with a custom factory
+	// and removing a different default (e.g. text/plain) preserves the exact custom factory when healing.
+	customJsonWriter := absser.NewSerializationWriterFactoryRegistry()
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"] = customJsonWriter
+	delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	assert.Same(t, customJsonWriter, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"])
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
 }
 
 func TestSetupDefaultsRestoresMissingDefaultDeserializersWhenPartiallyPopulated(t *testing.T) {
@@ -1139,6 +1154,21 @@ func TestSetupDefaultsRestoresMissingDefaultDeserializersWhenPartiallyPopulated(
 	SetupDefaults()
 
 	absser.DefaultParseNodeFactoryInstance.Lock()
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// Verify that overriding a default content type (e.g. application/json) with a custom factory
+	// and removing a different default (e.g. text/plain) preserves the exact custom factory when healing.
+	customJsonParser := absser.NewParseNodeFactoryRegistry()
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"] = customJsonParser
+	delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	SetupDefaults()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	assert.Same(t, customJsonParser, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"])
 	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
