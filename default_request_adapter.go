@@ -79,17 +79,17 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	return result, nil
 }
 
-// GetBaseUrl returns the base URL for the request adapter or empty string if the receiver is nil.
+// GetBaseUrl returns the base URL for the request adapter or empty string if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) GetBaseUrl() string {
-	if a == nil {
+	if a == nil || a.isUninitialized() {
 		return ""
 	}
 	return a.NetHttpRequestAdapter.GetBaseUrl()
 }
 
-// SetBaseUrl sets the base URL for the request adapter or performs a no-op if the receiver is nil.
+// SetBaseUrl sets the base URL for the request adapter or performs a no-op if the receiver is nil or uninitialized.
 func (a *DefaultRequestAdapter) SetBaseUrl(baseUrl string) {
-	if a == nil {
+	if a == nil || a.isUninitialized() {
 		return
 	}
 	a.NetHttpRequestAdapter.SetBaseUrl(baseUrl)
