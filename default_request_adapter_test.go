@@ -1061,3 +1061,123 @@ func TestSetupDefaultsRepopulatesEmptyParseNodeRegistryMap(t *testing.T) {
 	assert.Contains(t, deserializerMap, "application/x-www-form-urlencoded")
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 }
+
+func TestSetupDefaultsRestoresMissingDefaultSerializersWhenPartiallyPopulated(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Initial setup
+	SetupDefaults()
+
+	// Retain only a custom serializer and remove default serializers
+	customContentType := "application/x-custom-serializer"
+	customWriter := absser.NewSerializationWriterFactoryRegistry()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		customContentType: customWriter,
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// Calling SetupDefaults without ResetDefaults must restore all missing defaults while preserving custom registrations
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	serializerMap := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories
+	assert.Contains(t, serializerMap, customContentType)
+	assert.Contains(t, serializerMap, "application/json")
+	assert.Contains(t, serializerMap, "text/plain")
+	assert.Contains(t, serializerMap, "application/x-www-form-urlencoded")
+	assert.Contains(t, serializerMap, "multipart/form-data")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// Verify one deleted default serializer is also restored
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	assert.Contains(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+}
+
+func TestSetupDefaultsRestoresMissingDefaultDeserializersWhenPartiallyPopulated(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Initial setup
+	SetupDefaults()
+
+	// Retain only a custom deserializer and remove default deserializers
+	customContentType := "application/x-custom-deserializer"
+	customParser := absser.NewParseNodeFactoryRegistry()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		customContentType: customParser,
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// Calling SetupDefaults without ResetDefaults must restore all missing defaults while preserving custom registrations
+	SetupDefaults()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	deserializerMap := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories
+	assert.Contains(t, deserializerMap, customContentType)
+	assert.Contains(t, deserializerMap, "application/json")
+	assert.Contains(t, deserializerMap, "text/plain")
+	assert.Contains(t, deserializerMap, "application/x-www-form-urlencoded")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// Verify one deleted default deserializer is also restored
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	SetupDefaults()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	assert.Contains(t, absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+}
+
+func TestSetupDefaultsCleansNilEntriesAndRestoresDefaults(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	SetupDefaults()
+
+	// Set nil factories for default content types
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"] = nil
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"] = nil
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// SetupDefaults must clean the nil entries and restore valid factories
+	assert.NotPanics(t, func() {
+		SetupDefaults()
+	})
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	writerFactory := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"]
+	assert.NotNil(t, writerFactory)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	parseFactory := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"]
+	assert.NotNil(t, parseFactory)
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	writer, err := absser.DefaultSerializationWriterFactoryInstance.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+
+	rootNode, err := absser.DefaultParseNodeFactoryInstance.GetRootParseNode("application/json", []byte(`{"status":"clean"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, rootNode)
+}
