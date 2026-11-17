@@ -28,6 +28,10 @@ var (
 	ErrNilRequestAdapter = errors.New("request adapter cannot be nil")
 	// ErrUninitializedRequestAdapter is returned when an operation is performed on an uninitialized DefaultRequestAdapter.
 	ErrUninitializedRequestAdapter = errors.New("request adapter is not initialized")
+	// ErrNilAuthenticationProvider is returned when an authentication provider is nil.
+	ErrNilAuthenticationProvider = errors.New("authenticationProvider cannot be nil")
+	// ErrFailedToInitializeAdapter is returned when the underlying request adapter fails to initialize.
+	ErrFailedToInitializeAdapter = errors.New("failed to initialize request adapter")
 )
 
 // NewDefaultRequestAdapter creates a new DefaultRequestAdapter with the given parameters
@@ -53,7 +57,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 // NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions creates a new DefaultRequestAdapter with the given parameters including observability options
 func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider absauth.AuthenticationProvider, parseNodeFactory absser.ParseNodeFactory, serializationWriterFactory absser.SerializationWriterFactory, httpClient *nethttp.Client, observabilityOptions khttp.ObservabilityOptions) (*DefaultRequestAdapter, error) {
 	if isNilValue(authenticationProvider) {
-		return nil, errors.New("authenticationProvider cannot be nil")
+		return nil, ErrNilAuthenticationProvider
 	}
 	SetupDefaults()
 	if httpClient == nil {
@@ -70,7 +74,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 		return nil, err
 	}
 	if defaultAdapter == nil {
-		return nil, errors.New("failed to initialize request adapter")
+		return nil, ErrFailedToInitializeAdapter
 	}
 	result := &DefaultRequestAdapter{
 		NetHttpRequestAdapter: *defaultAdapter,
@@ -120,7 +124,7 @@ func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFac
 }
 
 func (a *DefaultRequestAdapter) isUninitialized() bool {
-	return a.GetSerializationWriterFactory() == nil || a.GetParseNodeFactory() == nil
+	return isNilValue(a.GetSerializationWriterFactory()) || isNilValue(a.GetParseNodeFactory())
 }
 
 func (a *DefaultRequestAdapter) checkReceiver() error {
