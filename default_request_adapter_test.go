@@ -15,6 +15,7 @@ import (
 	"github.com/microsoft/kiota-abstractions-go/store"
 	khttp "github.com/microsoft/kiota-http-go"
 	serjson "github.com/microsoft/kiota-serialization-json-go"
+	sertext "github.com/microsoft/kiota-serialization-text-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -1360,6 +1361,15 @@ func TestFirstNewDefaultRequestAdapterDoesNotMutatePrepopulatedRegistries(t *tes
 	absser.DefaultParseNodeFactoryInstance.Unlock()
 	assert.True(t, hasNilParser, "first adapter creation must not delete nil entries from prepopulated parse registry")
 	assert.False(t, hasTextParser, "first adapter creation must not write missing defaults into prepopulated parse registry")
+
+	// The adapter receives all bundle defaults via an adapter-local registry without mutating the shared registries:
+	adapterWriter, wErr := adapter.GetSerializationWriterFactory().GetSerializationWriter("text/plain")
+	assert.NoError(t, wErr)
+	assert.NotNil(t, adapterWriter)
+
+	adapterParser, pErr := adapter.GetParseNodeFactory().GetRootParseNode("text/plain", []byte("hello"))
+	assert.NoError(t, pErr)
+	assert.NotNil(t, adapterParser)
 }
 
 func TestNewDefaultRequestAdapterWithEmptyOrNilRegistryMaps(t *testing.T) {
@@ -1460,4 +1470,190 @@ func TestSetupDefaultsPreservesBackingStoreWrapping(t *testing.T) {
 
 	_, restoredParserProxy := restoredParser.(*store.BackingStoreParseNodeFactory)
 	assert.True(t, restoredParserProxy, "restored deserializer must preserve backing-store proxy wrapping")
+}
+
+func TestTypedNilProxyDoesNotEnableBackingStore(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Set a typed-nil proxy factory in both registries
+	var typedNilWriter *store.BackingStoreSerializationWriterProxyFactory = nil
+	var typedNilParser *store.BackingStoreParseNodeFactory = nil
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"] = typedNilWriter
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/json"] = typedNilParser
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	assert.False(t, isWriterRegistryBackingStoreEnabled(absser.DefaultSerializationWriterFactoryInstance))
+	assert.False(t, isParseRegistryBackingStoreEnabled(absser.DefaultParseNodeFactoryInstance))
+
+	// Healing via SetupDefaults must not treat backing store as enabled
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	restoredWriter := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"]
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+	_, isProxy := restoredWriter.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.False(t, isProxy, "restored serializer should not be wrapped with backing store proxy when only typed-nil was present")
+}
+
+func TestSingleActiveEntryInSharedRegistryPreservesAllBundleDefaultsForAdapter(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Another client registered only application/json
+	customJsonWriter := serjson.NewJsonSerializationWriterFactory()
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		"application/json": customJsonWriter,
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	customJsonParser := serjson.NewJsonParseNodeFactory()
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		"application/json": customJsonParser,
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	setupDefaultsLock.Lock()
+	defaultsInitialized = false
+	setupDefaultsLock.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Shared registry was NOT mutated
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	assert.Len(t, absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, 1)
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// But the adapter has all bundle defaults plus the custom JSON implementation
+	writerFactory := adapter.GetSerializationWriterFactory()
+	jsonWriter, err := writerFactory.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, jsonWriter)
+
+	textWriter, err := writerFactory.GetSerializationWriter("text/plain")
+	assert.NoError(t, err)
+	assert.NotNil(t, textWriter)
+
+	formWriter, err := writerFactory.GetSerializationWriter("application/x-www-form-urlencoded")
+	assert.NoError(t, err)
+	assert.NotNil(t, formWriter)
+
+	multipartWriter, err := writerFactory.GetSerializationWriter("multipart/form-data")
+	assert.NoError(t, err)
+	assert.NotNil(t, multipartWriter)
+
+	parseFactory := adapter.GetParseNodeFactory()
+	jsonParser, err := parseFactory.GetRootParseNode("application/json", []byte(`{"id":1}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, jsonParser)
+
+	textParser, err := parseFactory.GetRootParseNode("text/plain", []byte("plain text"))
+	assert.NoError(t, err)
+	assert.NotNil(t, textParser)
+
+	formParser, err := parseFactory.GetRootParseNode("application/x-www-form-urlencoded", []byte("key=val"))
+	assert.NoError(t, err)
+	assert.NotNil(t, formParser)
+}
+
+func TestWriterAndParserBackingStoreModesAreIndependent(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Enable backing store ONLY for writers, not parsers
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	SetupDefaults()
+
+	// Manually wrap only the writer registry
+	abs.EnableBackingStoreForSerializationWriterFactory(absser.DefaultSerializationWriterFactoryInstance)
+
+	assert.True(t, isWriterRegistryBackingStoreEnabled(absser.DefaultSerializationWriterFactoryInstance))
+	assert.False(t, isParseRegistryBackingStoreEnabled(absser.DefaultParseNodeFactoryInstance))
+
+	// Delete a default parser
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// SetupDefaults must heal text/plain WITHOUT wrapping it in a backing store proxy
+	SetupDefaults()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	restoredParser := absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	_, isParserProxy := restoredParser.(*store.BackingStoreParseNodeFactory)
+	assert.False(t, isParserProxy, "parser default should NOT be wrapped in backing store proxy when backing store was only enabled on writers")
+
+	// Also test constructor local registry with independent backing store
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	delete(absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories, "text/plain")
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Writer registry on adapter should have backing store proxy
+	writerReg, ok := adapter.GetSerializationWriterFactory().(*absser.SerializationWriterFactoryRegistry)
+	assert.True(t, ok)
+	writerReg.Lock()
+	jsonWriter := writerReg.ContentTypeAssociatedFactories["application/json"]
+	writerReg.Unlock()
+	_, isWriterProxy := jsonWriter.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.True(t, isWriterProxy)
+
+	// Parser registry on adapter should NOT have backing store proxy
+	parseReg, ok := adapter.GetParseNodeFactory().(*absser.ParseNodeFactoryRegistry)
+	assert.True(t, ok)
+	parseReg.Lock()
+	textParser := parseReg.ContentTypeAssociatedFactories["text/plain"]
+	parseReg.Unlock()
+	_, isParserProxy = textParser.(*store.BackingStoreParseNodeFactory)
+	assert.False(t, isParserProxy)
+}
+
+func TestHealingPreservesExistingCustomFactoryUnwrappedWhenBackingStoreEnabled(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	SetupDefaults()
+
+	// Enable backing store
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	adapter.EnableBackingStore(nil)
+
+	// Install a custom unwrapped text/plain writer and delete application/json
+	customTextWriter := sertext.NewTextSerializationWriterFactory()
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"] = customTextWriter
+	delete(absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories, "application/json")
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// Call SetupDefaults to heal application/json
+	SetupDefaults()
+
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	textWriter := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["text/plain"]
+	jsonWriter := absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/json"]
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	// Custom textWriter must be preserved exactly as customTextWriter, NOT wrapped into a proxy
+	assert.Same(t, customTextWriter, textWriter, "existing custom factory must remain unwrapped and identical")
+
+	// Missing application/json must be restored and wrapped into a proxy
+	_, isJsonProxy := jsonWriter.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.True(t, isJsonProxy, "restored default factory must be wrapped in backing store proxy")
 }
