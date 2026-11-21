@@ -5,6 +5,8 @@ import (
 	"errors"
 	nethttp "net/http"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 
 	abs "github.com/microsoft/kiota-abstractions-go"
@@ -66,7 +68,10 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if isNilValue(serializationWriterFactory) {
 		backingStoreWriters := isWriterRegistryBackingStoreEnabled(defaultWriterFactory)
 		if defaultWriterFactory == nil || needsLocalWriterRegistry(defaultWriterFactory) {
-			serializationWriterFactory = createAdapterLocalSerializationWriterFactoryRegistry(defaultWriterFactory, backingStoreWriters)
+			serializationWriterFactory = &fallbackSerializationWriterFactory{
+				primary:  defaultWriterFactory,
+				fallback: newSafeDefaultSerializationWriterFactoryRegistry(backingStoreWriters),
+			}
 		} else {
 			serializationWriterFactory = defaultWriterFactory
 		}
@@ -74,7 +79,10 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if isNilValue(parseNodeFactory) {
 		backingStoreParsers := isParseRegistryBackingStoreEnabled(defaultParseFactory)
 		if defaultParseFactory == nil || needsLocalParseRegistry(defaultParseFactory) {
-			parseNodeFactory = createAdapterLocalParseNodeFactoryRegistry(defaultParseFactory, backingStoreParsers)
+			parseNodeFactory = &fallbackParseNodeFactory{
+				primary:  defaultParseFactory,
+				fallback: newSafeDefaultParseNodeFactoryRegistry(backingStoreParsers),
+			}
 		} else {
 			parseNodeFactory = defaultParseFactory
 		}
@@ -393,11 +401,16 @@ func needsLocalWriterRegistry(reg *absser.SerializationWriterFactoryRegistry) bo
 	}
 	reg.Lock()
 	defer reg.Unlock()
-	if len(reg.ContentTypeAssociatedFactories) == 0 {
+	if reg.ContentTypeAssociatedFactories == nil || len(reg.ContentTypeAssociatedFactories) == 0 {
 		return true
 	}
 	for _, ct := range defaultSerializerContentTypes {
 		if f, ok := reg.ContentTypeAssociatedFactories[ct]; !ok || isNilValue(f) {
+			return true
+		}
+	}
+	for _, f := range reg.ContentTypeAssociatedFactories {
+		if isNilValue(f) {
 			return true
 		}
 	}
@@ -410,7 +423,7 @@ func needsLocalParseRegistry(reg *absser.ParseNodeFactoryRegistry) bool {
 	}
 	reg.Lock()
 	defer reg.Unlock()
-	if len(reg.ContentTypeAssociatedFactories) == 0 {
+	if reg.ContentTypeAssociatedFactories == nil || len(reg.ContentTypeAssociatedFactories) == 0 {
 		return true
 	}
 	for _, ct := range defaultDeserializerContentTypes {
@@ -418,11 +431,150 @@ func needsLocalParseRegistry(reg *absser.ParseNodeFactoryRegistry) bool {
 			return true
 		}
 	}
+	for _, f := range reg.ContentTypeAssociatedFactories {
+		if isNilValue(f) {
+			return true
+		}
+	}
 	return false
 }
 
-func createAdapterLocalSerializationWriterFactoryRegistry(source *absser.SerializationWriterFactoryRegistry, backingStore bool) *absser.SerializationWriterFactoryRegistry {
-	local := absser.NewSerializationWriterFactoryRegistry()
+var contentTypeVendorCleanupPattern = regexp.MustCompile(`[^/]+\+`)
+
+func hasValidFactory(reg *absser.SerializationWriterFactoryRegistry, contentType string) bool {
+	if reg == nil {
+		return false
+	}
+	trimmed := strings.TrimSpace(contentType)
+	if trimmed == "" {
+		return false
+	}
+	vendorSpecificContentType := strings.TrimSpace(strings.Split(trimmed, ";")[0])
+	cleanedContentType := contentTypeVendorCleanupPattern.ReplaceAllString(vendorSpecificContentType, "")
+
+	reg.Lock()
+	defer reg.Unlock()
+	if reg.ContentTypeAssociatedFactories == nil {
+		return false
+	}
+
+	for _, ct := range []string{
+		vendorSpecificContentType,
+		strings.ToLower(vendorSpecificContentType),
+		cleanedContentType,
+		strings.ToLower(cleanedContentType),
+	} {
+		if fac, ok := reg.ContentTypeAssociatedFactories[ct]; ok {
+			return !isNilValue(fac)
+		}
+	}
+	return false
+}
+
+func hasValidParseFactory(reg *absser.ParseNodeFactoryRegistry, contentType string) bool {
+	if reg == nil {
+		return false
+	}
+	trimmed := strings.TrimSpace(contentType)
+	if trimmed == "" {
+		return false
+	}
+	vendorSpecificContentType := strings.TrimSpace(strings.Split(trimmed, ";")[0])
+	cleanedContentType := contentTypeVendorCleanupPattern.ReplaceAllString(vendorSpecificContentType, "")
+
+	reg.Lock()
+	defer reg.Unlock()
+	if reg.ContentTypeAssociatedFactories == nil {
+		return false
+	}
+
+	for _, ct := range []string{
+		vendorSpecificContentType,
+		strings.ToLower(vendorSpecificContentType),
+		cleanedContentType,
+		strings.ToLower(cleanedContentType),
+	} {
+		if fac, ok := reg.ContentTypeAssociatedFactories[ct]; ok {
+			return !isNilValue(fac)
+		}
+	}
+	return false
+}
+
+type fallbackSerializationWriterFactory struct {
+	primary  *absser.SerializationWriterFactoryRegistry
+	fallback *absser.SerializationWriterFactoryRegistry
+}
+
+func (f *fallbackSerializationWriterFactory) GetValidContentType() (string, error) {
+	return "", errors.New("the registry supports multiple content types. Get the registered factory instead")
+}
+
+func (f *fallbackSerializationWriterFactory) GetSerializationWriter(contentType string) (absser.SerializationWriter, error) {
+	if f != nil && f.primary != nil && hasValidFactory(f.primary, contentType) {
+		writer, err := f.primary.GetSerializationWriter(contentType)
+		if err == nil && writer != nil {
+			return writer, nil
+		}
+	}
+	if f != nil && f.fallback != nil {
+		return f.fallback.GetSerializationWriter(contentType)
+	}
+	return nil, errors.New("content type " + contentType + " does not have a factory registered to be parsed")
+}
+
+func (f *fallbackSerializationWriterFactory) GetPrimary() *absser.SerializationWriterFactoryRegistry {
+	if f == nil {
+		return nil
+	}
+	return f.primary
+}
+
+func (f *fallbackSerializationWriterFactory) GetFallback() *absser.SerializationWriterFactoryRegistry {
+	if f == nil {
+		return nil
+	}
+	return f.fallback
+}
+
+type fallbackParseNodeFactory struct {
+	primary  *absser.ParseNodeFactoryRegistry
+	fallback *absser.ParseNodeFactoryRegistry
+}
+
+func (f *fallbackParseNodeFactory) GetValidContentType() (string, error) {
+	return "", errors.New("the registry supports multiple content types. Get the registered factory instead")
+}
+
+func (f *fallbackParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
+	if f != nil && f.primary != nil && hasValidParseFactory(f.primary, contentType) {
+		node, err := f.primary.GetRootParseNode(contentType, content)
+		if err == nil && node != nil {
+			return node, nil
+		}
+	}
+	if f != nil && f.fallback != nil {
+		return f.fallback.GetRootParseNode(contentType, content)
+	}
+	return nil, errors.New("content type " + contentType + " does not have a factory registered to be parsed")
+}
+
+func (f *fallbackParseNodeFactory) GetPrimary() *absser.ParseNodeFactoryRegistry {
+	if f == nil {
+		return nil
+	}
+	return f.primary
+}
+
+func (f *fallbackParseNodeFactory) GetFallback() *absser.ParseNodeFactoryRegistry {
+	if f == nil {
+		return nil
+	}
+	return f.fallback
+}
+
+func newSafeDefaultSerializationWriterFactoryRegistry(backingStore bool) *absser.SerializationWriterFactoryRegistry {
+	reg := absser.NewSerializationWriterFactoryRegistry()
 	var jsonF absser.SerializationWriterFactory = serjson.NewJsonSerializationWriterFactory()
 	var textF absser.SerializationWriterFactory = sertext.NewTextSerializationWriterFactory()
 	var formF absser.SerializationWriterFactory = serform.NewFormSerializationWriterFactory()
@@ -433,25 +585,15 @@ func createAdapterLocalSerializationWriterFactoryRegistry(source *absser.Seriali
 		formF = store.NewBackingStoreSerializationWriterProxyFactory(formF)
 		multipartF = store.NewBackingStoreSerializationWriterProxyFactory(multipartF)
 	}
-	local.ContentTypeAssociatedFactories["application/json"] = jsonF
-	local.ContentTypeAssociatedFactories["text/plain"] = textF
-	local.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = formF
-	local.ContentTypeAssociatedFactories["multipart/form-data"] = multipartF
-
-	if source != nil {
-		source.Lock()
-		for k, v := range source.ContentTypeAssociatedFactories {
-			if !isNilValue(v) {
-				local.ContentTypeAssociatedFactories[k] = v
-			}
-		}
-		source.Unlock()
-	}
-	return local
+	reg.ContentTypeAssociatedFactories["application/json"] = jsonF
+	reg.ContentTypeAssociatedFactories["text/plain"] = textF
+	reg.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = formF
+	reg.ContentTypeAssociatedFactories["multipart/form-data"] = multipartF
+	return reg
 }
 
-func createAdapterLocalParseNodeFactoryRegistry(source *absser.ParseNodeFactoryRegistry, backingStore bool) *absser.ParseNodeFactoryRegistry {
-	local := absser.NewParseNodeFactoryRegistry()
+func newSafeDefaultParseNodeFactoryRegistry(backingStore bool) *absser.ParseNodeFactoryRegistry {
+	reg := absser.NewParseNodeFactoryRegistry()
 	var jsonF absser.ParseNodeFactory = serjson.NewJsonParseNodeFactory()
 	var textF absser.ParseNodeFactory = sertext.NewTextParseNodeFactory()
 	var formF absser.ParseNodeFactory = serform.NewFormParseNodeFactory()
@@ -460,20 +602,10 @@ func createAdapterLocalParseNodeFactoryRegistry(source *absser.ParseNodeFactoryR
 		textF = store.NewBackingStoreParseNodeFactory(textF)
 		formF = store.NewBackingStoreParseNodeFactory(formF)
 	}
-	local.ContentTypeAssociatedFactories["application/json"] = jsonF
-	local.ContentTypeAssociatedFactories["text/plain"] = textF
-	local.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = formF
-
-	if source != nil {
-		source.Lock()
-		for k, v := range source.ContentTypeAssociatedFactories {
-			if !isNilValue(v) {
-				local.ContentTypeAssociatedFactories[k] = v
-			}
-		}
-		source.Unlock()
-	}
-	return local
+	reg.ContentTypeAssociatedFactories["application/json"] = jsonF
+	reg.ContentTypeAssociatedFactories["text/plain"] = textF
+	reg.ContentTypeAssociatedFactories["application/x-www-form-urlencoded"] = formF
+	return reg
 }
 
 func ensureDefaults() (*absser.SerializationWriterFactoryRegistry, *absser.ParseNodeFactoryRegistry) {
@@ -483,34 +615,40 @@ func ensureDefaults() (*absser.SerializationWriterFactoryRegistry, *absser.Parse
 	writerReg := absser.DefaultSerializationWriterFactoryInstance
 	parseReg := absser.DefaultParseNodeFactoryInstance
 
+	recreatedWriters := false
 	if writerReg == nil {
 		writerReg = absser.NewSerializationWriterFactoryRegistry()
 		absser.DefaultSerializationWriterFactoryInstance = writerReg
 		registerDefaultSerializers(false)
-		defaultsInitialized = true
+		recreatedWriters = true
 	}
+	recreatedParsers := false
 	if parseReg == nil {
 		parseReg = absser.NewParseNodeFactoryRegistry()
 		absser.DefaultParseNodeFactoryInstance = parseReg
 		registerDefaultDeserializers(false)
-		defaultsInitialized = true
+		recreatedParsers = true
 	}
 
 	if !defaultsInitialized {
-		writerReg.Lock()
-		emptyWriters := len(writerReg.ContentTypeAssociatedFactories) == 0
-		writerReg.Unlock()
-
-		parseReg.Lock()
-		emptyParsers := len(parseReg.ContentTypeAssociatedFactories) == 0
-		parseReg.Unlock()
-
-		if emptyWriters {
-			registerDefaultSerializers(false)
+		if !recreatedWriters {
+			writerReg.Lock()
+			emptyWriters := writerReg.ContentTypeAssociatedFactories != nil && len(writerReg.ContentTypeAssociatedFactories) == 0
+			writerReg.Unlock()
+			if emptyWriters {
+				registerDefaultSerializers(false)
+			}
 		}
-		if emptyParsers {
-			registerDefaultDeserializers(false)
+
+		if !recreatedParsers {
+			parseReg.Lock()
+			emptyParsers := parseReg.ContentTypeAssociatedFactories != nil && len(parseReg.ContentTypeAssociatedFactories) == 0
+			parseReg.Unlock()
+			if emptyParsers {
+				registerDefaultDeserializers(false)
+			}
 		}
+
 		defaultsInitialized = true
 	}
 

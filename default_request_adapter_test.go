@@ -1614,13 +1614,21 @@ func TestWriterAndParserBackingStoreModesAreIndependent(t *testing.T) {
 	assert.True(t, isWriterProxy)
 
 	// Parser registry on adapter should NOT have backing store proxy
-	parseReg, ok := adapter.GetParseNodeFactory().(*absser.ParseNodeFactoryRegistry)
-	assert.True(t, ok)
-	parseReg.Lock()
-	textParser := parseReg.ContentTypeAssociatedFactories["text/plain"]
-	parseReg.Unlock()
-	_, isParserProxy = textParser.(*store.BackingStoreParseNodeFactory)
-	assert.False(t, isParserProxy)
+	if fb, ok := adapter.GetParseNodeFactory().(*fallbackParseNodeFactory); ok {
+		fb.fallback.Lock()
+		textParser := fb.fallback.ContentTypeAssociatedFactories["text/plain"]
+		fb.fallback.Unlock()
+		_, isParserProxy = textParser.(*store.BackingStoreParseNodeFactory)
+		assert.False(t, isParserProxy)
+	} else if parseReg, ok := adapter.GetParseNodeFactory().(*absser.ParseNodeFactoryRegistry); ok {
+		parseReg.Lock()
+		textParser := parseReg.ContentTypeAssociatedFactories["text/plain"]
+		parseReg.Unlock()
+		_, isParserProxy = textParser.(*store.BackingStoreParseNodeFactory)
+		assert.False(t, isParserProxy)
+	} else {
+		t.Fatalf("unexpected parse node factory type: %T", adapter.GetParseNodeFactory())
+	}
 }
 
 func TestHealingPreservesExistingCustomFactoryUnwrappedWhenBackingStoreEnabled(t *testing.T) {
@@ -1656,4 +1664,152 @@ func TestHealingPreservesExistingCustomFactoryUnwrappedWhenBackingStoreEnabled(t
 	// Missing application/json must be restored and wrapped into a proxy
 	_, isJsonProxy := jsonWriter.(*store.BackingStoreSerializationWriterProxyFactory)
 	assert.True(t, isJsonProxy, "restored default factory must be wrapped in backing store proxy")
+}
+
+func TestFirstConstructorWithNonNilRegistryHavingNilMapDoesNotPanic(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Create non-nil registries with nil map
+	absser.DefaultSerializationWriterFactoryInstance = &absser.SerializationWriterFactoryRegistry{
+		ContentTypeAssociatedFactories: nil,
+	}
+	absser.DefaultParseNodeFactoryInstance = &absser.ParseNodeFactoryRegistry{
+		ContentTypeAssociatedFactories: nil,
+	}
+
+	setupDefaultsLock.Lock()
+	defaultsInitialized = false
+	setupDefaultsLock.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Adapter should have working fallback factories
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+
+	node, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"id":1}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+}
+
+type mockCustomSerializationFactory struct {
+	targetContentType string
+}
+
+func (m *mockCustomSerializationFactory) GetValidContentType() (string, error) {
+	return m.targetContentType, nil
+}
+
+func (m *mockCustomSerializationFactory) GetSerializationWriter(contentType string) (absser.SerializationWriter, error) {
+	return serjson.NewJsonSerializationWriter(), nil
+}
+
+type mockCustomParseNodeFactory struct {
+	targetContentType string
+}
+
+func (m *mockCustomParseNodeFactory) GetValidContentType() (string, error) {
+	return m.targetContentType, nil
+}
+
+func (m *mockCustomParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
+	return serjson.NewJsonParseNode(content)
+}
+
+func TestAdapterSeesSerializersRegisteredGloballyAfterward(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Shared registry has only JSON
+	customJsonWriter := serjson.NewJsonSerializationWriterFactory()
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		"application/json": customJsonWriter,
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	customJsonParser := serjson.NewJsonParseNodeFactory()
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		"application/json": customJsonParser,
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Adapter can use JSON and text/plain (from fallback)
+	w, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("text/plain")
+	assert.NoError(t, err)
+	assert.NotNil(t, w)
+
+	// Now, register a custom serializer globally in the shared registry AFTER adapter creation:
+	customXmlWriter := &mockCustomSerializationFactory{targetContentType: "application/xml"}
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories["application/xml"] = customXmlWriter
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	customXmlParser := &mockCustomParseNodeFactory{targetContentType: "application/xml"}
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories["application/xml"] = customXmlParser
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	// The adapter must see the globally registered serializer live!
+	xmlWriter, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/xml")
+	assert.NoError(t, err)
+	assert.NotNil(t, xmlWriter)
+
+	xmlParser, err := adapter.GetParseNodeFactory().GetRootParseNode("application/xml", []byte(`{"id": 1}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, xmlParser)
+}
+
+func TestEnsureDefaultsWithOneNilSingletonAndOneEmptySingleton(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Case A: Writer singleton is nil, Parse singleton is non-nil but empty
+	absser.DefaultSerializationWriterFactoryInstance = nil
+	absser.DefaultParseNodeFactoryInstance = absser.NewParseNodeFactoryRegistry()
+
+	setupDefaultsLock.Lock()
+	defaultsInitialized = false
+	setupDefaultsLock.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	// Pass the empty parse singleton explicitly:
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authProvider, absser.DefaultParseNodeFactoryInstance, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Adapter and DefaultParseNodeFactoryInstance must be able to parse JSON
+	node, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"id":1}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+
+	// Case B: Parse singleton is nil, Writer singleton is non-nil but empty
+	ResetDefaults()
+	absser.DefaultParseNodeFactoryInstance = nil
+	absser.DefaultSerializationWriterFactoryInstance = absser.NewSerializationWriterFactoryRegistry()
+
+	setupDefaultsLock.Lock()
+	defaultsInitialized = false
+	setupDefaultsLock.Unlock()
+
+	// Pass the empty writer singleton explicitly:
+	adapter2, err2 := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authProvider, nil, absser.DefaultSerializationWriterFactoryInstance)
+	assert.NoError(t, err2)
+	assert.NotNil(t, adapter2)
+
+	// Adapter and DefaultSerializationWriterFactoryInstance must be able to write JSON
+	writer, err2 := adapter2.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err2)
+	assert.NotNil(t, writer)
 }
