@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"context"
+	"errors"
 	"io"
 	nethttp "net/http"
 	"net/url"
@@ -1812,4 +1813,149 @@ func TestEnsureDefaultsWithOneNilSingletonAndOneEmptySingleton(t *testing.T) {
 	writer, err2 := adapter2.GetSerializationWriterFactory().GetSerializationWriter("application/json")
 	assert.NoError(t, err2)
 	assert.NotNil(t, writer)
+}
+
+type errorWriterFactory struct {
+	expectedErr error
+}
+
+func (e *errorWriterFactory) GetValidContentType() (string, error) {
+	return "application/json", nil
+}
+
+func (e *errorWriterFactory) GetSerializationWriter(contentType string) (absser.SerializationWriter, error) {
+	return nil, e.expectedErr
+}
+
+type errorParseNodeFactory struct {
+	expectedErr error
+}
+
+func (e *errorParseNodeFactory) GetValidContentType() (string, error) {
+	return "application/json", nil
+}
+
+func (e *errorParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
+	return nil, e.expectedErr
+}
+
+func TestCompositeFactoriesPreserveCustomErrorsWithoutFallback(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	customWriterErr := errors.New("custom serializer rejected content")
+	customParseErr := errors.New("custom parser rejected content")
+
+	// Register custom error-returning factories for application/json in shared registries
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		"application/json": &errorWriterFactory{expectedErr: customWriterErr},
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		"application/json": &errorParseNodeFactory{expectedErr: customParseErr},
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Since application/json is registered in primary, its error must be returned directly and NOT fall back to local built-in JSON writer/parser!
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.ErrorIs(t, err, customWriterErr)
+	assert.Nil(t, writer)
+
+	node, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"id":1}`))
+	assert.ErrorIs(t, err, customParseErr)
+	assert.Nil(t, node)
+
+	// But an unregistered content type (text/plain) must still safely fall back to the local default registry
+	plainWriter, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("text/plain")
+	assert.NoError(t, err)
+	assert.NotNil(t, plainWriter)
+
+	plainNode, err := adapter.GetParseNodeFactory().GetRootParseNode("text/plain", []byte("hello"))
+	assert.NoError(t, err)
+	assert.NotNil(t, plainNode)
+}
+
+func TestEnableBackingStoreWithPartialRegistryDoesNotDoubleWrap(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Only JSON registered globally
+	customJsonWriter := serjson.NewJsonSerializationWriterFactory()
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		"application/json": customJsonWriter,
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	customJsonParser := serjson.NewJsonParseNodeFactory()
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		"application/json": customJsonParser,
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Call EnableBackingStore
+	adapter.EnableBackingStore(nil)
+
+	// 1. Adapter's root factory must NOT be wrapped with BackingStoreSerializationWriterProxyFactory
+	writerFactory := adapter.GetSerializationWriterFactory()
+	_, isProxyFactory := writerFactory.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.False(t, isProxyFactory, "composite writer factory should not be wrapped into BackingStoreSerializationWriterProxyFactory")
+
+	fw, isComposite := writerFactory.(*fallbackSerializationWriterFactory)
+	assert.True(t, isComposite, "writer factory should remain fallbackSerializationWriterFactory")
+
+	// 2. Both delegates must have their entries wrapped with BackingStore proxies exactly once
+	fw.primary.Lock()
+	primaryJsonWriter := fw.primary.ContentTypeAssociatedFactories["application/json"]
+	fw.primary.Unlock()
+	_, isPrimaryJsonProxy := primaryJsonWriter.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.True(t, isPrimaryJsonProxy, "primary JSON writer must be wrapped in proxy factory")
+
+	fw.fallback.Lock()
+	fallbackTextWriter := fw.fallback.ContentTypeAssociatedFactories["text/plain"]
+	fw.fallback.Unlock()
+	_, isFallbackTextProxy := fallbackTextWriter.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.True(t, isFallbackTextProxy, "fallback text writer must be wrapped in proxy factory")
+
+	// 3. Identical check for parse node factory
+	parseFactory := adapter.GetParseNodeFactory()
+	_, isParseProxyFactory := parseFactory.(*store.BackingStoreParseNodeFactory)
+	assert.False(t, isParseProxyFactory, "composite parse node factory should not be wrapped into BackingStoreParseNodeFactory")
+
+	fp, isParseComposite := parseFactory.(*fallbackParseNodeFactory)
+	assert.True(t, isParseComposite, "parse node factory should remain fallbackParseNodeFactory")
+
+	fp.primary.Lock()
+	primaryJsonParser := fp.primary.ContentTypeAssociatedFactories["application/json"]
+	fp.primary.Unlock()
+	_, isPrimaryJsonParseProxy := primaryJsonParser.(*store.BackingStoreParseNodeFactory)
+	assert.True(t, isPrimaryJsonParseProxy, "primary JSON parser must be wrapped in proxy factory")
+
+	fp.fallback.Lock()
+	fallbackTextParser := fp.fallback.ContentTypeAssociatedFactories["text/plain"]
+	fp.fallback.Unlock()
+	_, isFallbackTextParseProxy := fallbackTextParser.(*store.BackingStoreParseNodeFactory)
+	assert.True(t, isFallbackTextParseProxy, "fallback text parser must be wrapped in proxy factory")
+
+	// 4. Writers created must have backing store proxies and callbacks enabled
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+	assert.NotNil(t, writer.GetOnBeforeSerialization(), "writer must have backing store before-action callback")
+	assert.NotNil(t, writer.GetOnAfterObjectSerialization(), "writer must have backing store after-action callback")
+	assert.NotNil(t, writer.GetOnStartObjectSerialization(), "writer must have backing store start-action callback")
 }
