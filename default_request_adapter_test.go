@@ -1959,3 +1959,283 @@ func TestEnableBackingStoreWithPartialRegistryDoesNotDoubleWrap(t *testing.T) {
 	assert.NotNil(t, writer.GetOnAfterObjectSerialization(), "writer must have backing store after-action callback")
 	assert.NotNil(t, writer.GetOnStartObjectSerialization(), "writer must have backing store start-action callback")
 }
+
+type trackingBackingStore struct {
+	store.BackingStore
+	initStates        []bool
+	onlyChangedStates []bool
+}
+
+func newTrackingBackingStore() *trackingBackingStore {
+	return &trackingBackingStore{
+		BackingStore: store.NewInMemoryBackingStore(),
+	}
+}
+
+func (t *trackingBackingStore) SetInitializationCompleted(val bool) {
+	t.initStates = append(t.initStates, val)
+	t.BackingStore.SetInitializationCompleted(val)
+}
+
+func (t *trackingBackingStore) SetReturnOnlyChangedValues(val bool) {
+	t.onlyChangedStates = append(t.onlyChangedStates, val)
+	t.BackingStore.SetReturnOnlyChangedValues(val)
+}
+
+type testBackedModel struct {
+	bs *trackingBackingStore
+}
+
+func newTestBackedModel(_ absser.ParseNode) (absser.Parsable, error) {
+	return &testBackedModel{bs: newTrackingBackingStore()}, nil
+}
+
+func (m *testBackedModel) GetBackingStore() store.BackingStore {
+	return m.bs
+}
+
+func (m *testBackedModel) Serialize(writer absser.SerializationWriter) error {
+	if val, err := m.bs.Get("title"); err == nil && val != nil {
+		if strVal, ok := val.(string); ok {
+			if err := writer.WriteStringValue("title", &strVal); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *testBackedModel) GetFieldDeserializers() map[string]func(absser.ParseNode) error {
+	return map[string]func(absser.ParseNode) error{
+		"displayName": func(n absser.ParseNode) error {
+			val, err := n.GetStringValue()
+			if err != nil {
+				return err
+			}
+			if val != nil {
+				return m.bs.Set("displayName", *val)
+			}
+			return nil
+		},
+	}
+}
+
+type staticJSONTransport struct {
+	body string
+}
+
+func (t *staticJSONTransport) RoundTrip(req *nethttp.Request) (*nethttp.Response, error) {
+	header := make(nethttp.Header)
+	header.Set("Content-Type", "application/json")
+	return &nethttp.Response{
+		StatusCode:    nethttp.StatusOK,
+		Header:        header,
+		ContentLength: int64(len(t.body)),
+		Body:          io.NopCloser(strings.NewReader(t.body)),
+		Request:       req,
+	}, nil
+}
+
+func TestEnableBackingStoreMixedCompositeParserAndStandaloneWriter(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Partial shared parse registry -> adapter uses fallbackParseNodeFactory
+	absser.DefaultParseNodeFactoryInstance.Lock()
+	absser.DefaultParseNodeFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.ParseNodeFactory{
+		"application/json": serjson.NewJsonParseNodeFactory(),
+	}
+	absser.DefaultParseNodeFactoryInstance.Unlock()
+
+	standaloneWriter := serjson.NewJsonSerializationWriterFactory()
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactory(authProvider, nil, standaloneWriter)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	assert.Same(t, standaloneWriter, adapter.GetSerializationWriterFactory())
+
+	// Enable backing store twice to ensure idempotency and zero double-wrapping
+	adapter.EnableBackingStore(nil)
+	adapter.EnableBackingStore(nil)
+
+	writerFactory := adapter.GetSerializationWriterFactory()
+	_, isWrappedWriter := writerFactory.(*store.BackingStoreSerializationWriterProxyFactory)
+	assert.True(t, isWrappedWriter, "standalone writer must be wrapped in BackingStoreSerializationWriterProxyFactory")
+
+	writer, err := writerFactory.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+	assert.NotNil(t, writer.GetOnBeforeSerialization())
+	assert.NotNil(t, writer.GetOnAfterObjectSerialization())
+	assert.NotNil(t, writer.GetOnStartObjectSerialization())
+
+	model := &testBackedModel{bs: newTrackingBackingStore()}
+	assert.NoError(t, model.bs.Set("displayName", "initial"))
+	model.bs.SetInitializationCompleted(true)
+	assert.NoError(t, model.bs.Set("displayName", nil))
+	model.bs.initStates = nil
+	model.bs.onlyChangedStates = nil
+
+	assert.NoError(t, writer.WriteObjectValue("", model))
+	serialized, err := writer.GetSerializedContent()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(string(serialized), `"displayName":null`), "changed-to-nil property must be serialized exactly once")
+	assert.Equal(t, []bool{true, false}, model.bs.onlyChangedStates)
+	assert.Equal(t, []bool{true}, model.bs.initStates)
+
+	// Composite parser must remain fallbackParseNodeFactory without outer double-wrapping
+	fp, isCompositeParser := adapter.GetParseNodeFactory().(*fallbackParseNodeFactory)
+	assert.True(t, isCompositeParser)
+	node, err := fp.GetRootParseNode("application/json", []byte(`{"displayName":"alice"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+	parsed, err := node.GetObjectValue(newTestBackedModel)
+	assert.NoError(t, err)
+	parsedModel := parsed.(*testBackedModel)
+	assert.Equal(t, []bool{false, true}, parsedModel.bs.initStates)
+}
+
+func TestEnableBackingStoreMixedCompositeWriterAndStandaloneParser(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Partial shared writer registry -> adapter uses fallbackSerializationWriterFactory
+	absser.DefaultSerializationWriterFactoryInstance.Lock()
+	absser.DefaultSerializationWriterFactoryInstance.ContentTypeAssociatedFactories = map[string]absser.SerializationWriterFactory{
+		"application/json": serjson.NewJsonSerializationWriterFactory(),
+	}
+	absser.DefaultSerializationWriterFactoryInstance.Unlock()
+
+	standaloneParser := serjson.NewJsonParseNodeFactory()
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	httpClient := &nethttp.Client{Transport: &staticJSONTransport{body: `{"displayName":"bob"}`}}
+
+	adapter, err := NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClient(authProvider, standaloneParser, nil, httpClient)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+	adapter.SetBaseUrl("https://graph.microsoft.com/v1.0")
+	assert.Same(t, standaloneParser, adapter.GetParseNodeFactory())
+
+	// Enable backing store twice to ensure idempotency and zero double-wrapping
+	adapter.EnableBackingStore(nil)
+	adapter.EnableBackingStore(nil)
+
+	parseFactory := adapter.GetParseNodeFactory()
+	_, isWrappedParser := parseFactory.(*store.BackingStoreParseNodeFactory)
+	assert.True(t, isWrappedParser, "standalone parser must be wrapped in BackingStoreParseNodeFactory")
+
+	node, err := parseFactory.GetRootParseNode("application/json", []byte(`{"displayName":"alice"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+	parsed, err := node.GetObjectValue(newTestBackedModel)
+	assert.NoError(t, err)
+	parsedModel := parsed.(*testBackedModel)
+	assert.Equal(t, []bool{false, true}, parsedModel.bs.initStates)
+
+	// Verify Send (which uses NetHttpRequestAdapter's embedded parseNodeFactory) also uses the proxied parser
+	reqInfo := abs.NewRequestInformation()
+	reqInfo.Method = abs.GET
+	parsedUrl, err := url.Parse("https://graph.microsoft.com/v1.0/me")
+	assert.NoError(t, err)
+	reqInfo.SetUri(*parsedUrl)
+
+	sentModel, err := adapter.Send(context.Background(), reqInfo, newTestBackedModel, nil)
+	assert.NoError(t, err)
+	sentBacked := sentModel.(*testBackedModel)
+	assert.Equal(t, []bool{false, true}, sentBacked.bs.initStates)
+	val, err := sentBacked.bs.Get("displayName")
+	assert.NoError(t, err)
+	assert.Equal(t, "bob", val)
+
+	// Composite writer must remain fallbackSerializationWriterFactory without double-wrapping
+	fw, isCompositeWriter := adapter.GetSerializationWriterFactory().(*fallbackSerializationWriterFactory)
+	assert.True(t, isCompositeWriter)
+	writer, err := fw.GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+
+	model := &testBackedModel{bs: newTrackingBackingStore()}
+	assert.NoError(t, model.bs.Set("displayName", "initial"))
+	model.bs.SetInitializationCompleted(true)
+	assert.NoError(t, model.bs.Set("displayName", nil))
+	model.bs.initStates = nil
+	model.bs.onlyChangedStates = nil
+
+	assert.NoError(t, writer.WriteObjectValue("", model))
+	serialized, err := writer.GetSerializedContent()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(string(serialized), `"displayName":null`), "changed-to-nil property must be serialized exactly once")
+	assert.Equal(t, []bool{true, false}, model.bs.onlyChangedStates)
+	assert.Equal(t, []bool{true}, model.bs.initStates)
+}
+
+func TestEnableBackingStoreWithNilSharedMapsRetainsOptInAfterSetupDefaults(t *testing.T) {
+	ResetDefaults()
+	t.Cleanup(ResetDefaults)
+
+	// Nil map state on both shared registries
+	absser.DefaultSerializationWriterFactoryInstance = &absser.SerializationWriterFactoryRegistry{
+		ContentTypeAssociatedFactories: nil,
+	}
+	absser.DefaultParseNodeFactoryInstance = &absser.ParseNodeFactoryRegistry{
+		ContentTypeAssociatedFactories: nil,
+	}
+
+	setupDefaultsLock.Lock()
+	defaultsInitialized = false
+	setupDefaultsLock.Unlock()
+
+	authProvider := &absauth.AnonymousAuthenticationProvider{}
+	adapter, err := NewDefaultRequestAdapter(authProvider)
+	assert.NoError(t, err)
+	assert.NotNil(t, adapter)
+
+	// Enable backing store while shared maps are still nil
+	adapter.EnableBackingStore(nil)
+
+	// Quiescent SetupDefaults later populates plain defaults in shared registries
+	SetupDefaults()
+
+	// Writer path: primary now resolves newly populated shared factories while retaining backing store callbacks once
+	writer, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("application/json")
+	assert.NoError(t, err)
+	assert.NotNil(t, writer)
+	assert.NotNil(t, writer.GetOnBeforeSerialization())
+	assert.NotNil(t, writer.GetOnAfterObjectSerialization())
+	assert.NotNil(t, writer.GetOnStartObjectSerialization())
+
+	model := &testBackedModel{bs: newTrackingBackingStore()}
+	assert.NoError(t, model.bs.Set("displayName", "initial"))
+	model.bs.SetInitializationCompleted(true)
+	assert.NoError(t, model.bs.Set("displayName", nil))
+	model.bs.initStates = nil
+	model.bs.onlyChangedStates = nil
+
+	assert.NoError(t, writer.WriteObjectValue("", model))
+	serialized, err := writer.GetSerializedContent()
+	assert.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(string(serialized), `"displayName":null`), "nil-map -> enable -> heal must preserve single backing store callback")
+	assert.Equal(t, []bool{true, false}, model.bs.onlyChangedStates)
+	assert.Equal(t, []bool{true}, model.bs.initStates)
+
+	textWriter, err := adapter.GetSerializationWriterFactory().GetSerializationWriter("text/plain")
+	assert.NoError(t, err)
+	assert.NotNil(t, textWriter.GetOnBeforeSerialization())
+
+	// Parser path: primary now resolves newly populated shared factories while retaining backing store callbacks once
+	node, err := adapter.GetParseNodeFactory().GetRootParseNode("application/json", []byte(`{"displayName":"healed"}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, node)
+	parsed, err := node.GetObjectValue(newTestBackedModel)
+	assert.NoError(t, err)
+	parsedModel := parsed.(*testBackedModel)
+	assert.Equal(t, []bool{false, true}, parsedModel.bs.initStates)
+	val, err := parsedModel.bs.Get("displayName")
+	assert.NoError(t, err)
+	assert.Equal(t, "healed", val)
+
+	textNode, err := adapter.GetParseNodeFactory().GetRootParseNode("text/plain", []byte("hello"))
+	assert.NoError(t, err)
+	assert.NotNil(t, textNode.GetOnBeforeAssignFieldValues())
+	assert.NotNil(t, textNode.GetOnAfterAssignFieldValues())
+}

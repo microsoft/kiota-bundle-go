@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	abs "github.com/microsoft/kiota-abstractions-go"
 	absauth "github.com/microsoft/kiota-abstractions-go/authentication"
@@ -23,6 +24,8 @@ import (
 // DefaultRequestAdapter is the core service used by GraphServiceClient to make requests to Microsoft Graph.
 type DefaultRequestAdapter struct {
 	khttp.NetHttpRequestAdapter
+	standaloneWriter *standaloneSerializationWriterFactory
+	standaloneParser *standaloneParseNodeFactory
 }
 
 var (
@@ -65,6 +68,7 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	if httpClient == nil {
 		httpClient = khttp.GetDefaultClient()
 	}
+	var standaloneWriter *standaloneSerializationWriterFactory
 	if isNilValue(serializationWriterFactory) {
 		backingStoreWriters := isWriterRegistryBackingStoreEnabled(defaultWriterFactory)
 		if defaultWriterFactory == nil || needsLocalWriterRegistry(defaultWriterFactory) {
@@ -75,7 +79,15 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 		} else {
 			serializationWriterFactory = defaultWriterFactory
 		}
+	} else {
+		_, isWriterReg := serializationWriterFactory.(*absser.SerializationWriterFactoryRegistry)
+		_, isFallbackWriter := serializationWriterFactory.(*fallbackSerializationWriterFactory)
+		if !isWriterReg && !isFallbackWriter {
+			standaloneWriter = newStandaloneSerializationWriterFactory(serializationWriterFactory)
+			serializationWriterFactory = standaloneWriter
+		}
 	}
+	var standaloneParser *standaloneParseNodeFactory
 	if isNilValue(parseNodeFactory) {
 		backingStoreParsers := isParseRegistryBackingStoreEnabled(defaultParseFactory)
 		if defaultParseFactory == nil || needsLocalParseRegistry(defaultParseFactory) {
@@ -85,6 +97,13 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 			}
 		} else {
 			parseNodeFactory = defaultParseFactory
+		}
+	} else {
+		_, isParseReg := parseNodeFactory.(*absser.ParseNodeFactoryRegistry)
+		_, isFallbackParse := parseNodeFactory.(*fallbackParseNodeFactory)
+		if !isParseReg && !isFallbackParse {
+			standaloneParser = newStandaloneParseNodeFactory(parseNodeFactory)
+			parseNodeFactory = standaloneParser
 		}
 	}
 	defaultAdapter, err := khttp.NewNetHttpRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAndHttpClientAndObservabilityOptions(authenticationProvider, parseNodeFactory, serializationWriterFactory, httpClient, observabilityOptions)
@@ -96,6 +115,8 @@ func NewDefaultRequestAdapterWithParseNodeFactoryAndSerializationWriterFactoryAn
 	}
 	result := &DefaultRequestAdapter{
 		NetHttpRequestAdapter: *defaultAdapter,
+		standaloneWriter:      standaloneWriter,
+		standaloneParser:      standaloneParser,
 	}
 
 	return result, nil
@@ -122,6 +143,9 @@ func (a *DefaultRequestAdapter) GetSerializationWriterFactory() absser.Serializa
 	if a == nil {
 		return nil
 	}
+	if a.standaloneWriter != nil {
+		return a.standaloneWriter.get()
+	}
 	return a.NetHttpRequestAdapter.GetSerializationWriterFactory()
 }
 
@@ -130,11 +154,15 @@ func (a *DefaultRequestAdapter) GetParseNodeFactory() absser.ParseNodeFactory {
 	if a == nil {
 		return nil
 	}
+	if a.standaloneParser != nil {
+		return a.standaloneParser.get()
+	}
 	return a.NetHttpRequestAdapter.GetParseNodeFactory()
 }
 
 // EnableBackingStore enables the backing store proxies for the SerializationWriters and ParseNodes in use or performs a no-op if the receiver is nil or uninitialized.
-// When fallback composite factories are in use, it wraps their underlying primary and fallback delegates exactly once, preventing duplicate proxy wrapping.
+// When fallback composite factories are in use, it wraps their underlying primary and fallback delegates exactly once, preventing duplicate proxy wrapping,
+// while also wrapping standalone factories in mixed configurations and preserving backing-store opt-in if shared primary registries are populated later.
 func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFactory) {
 	if a == nil || a.isUninitialized() {
 		return
@@ -143,33 +171,33 @@ func (a *DefaultRequestAdapter) EnableBackingStore(factory store.BackingStoreFac
 		store.BackingStoreFactoryInstance = factory
 	}
 
-	writerFactory := a.GetSerializationWriterFactory()
-	parseFactory := a.GetParseNodeFactory()
-
-	fw, isFallbackWriter := writerFactory.(*fallbackSerializationWriterFactory)
-	fp, isFallbackParse := parseFactory.(*fallbackParseNodeFactory)
-
-	if isFallbackWriter && fw != nil {
-		enableBackingStoreForWriterRegistry(fw.primary)
-		enableBackingStoreForWriterRegistry(fw.fallback)
-	}
-	if isFallbackParse && fp != nil {
-		enableBackingStoreForParseRegistry(fp.primary)
-		enableBackingStoreForParseRegistry(fp.fallback)
-	}
-
-	if !isFallbackWriter && !isFallbackParse {
-		a.NetHttpRequestAdapter.EnableBackingStore(factory)
+	if a.standaloneWriter != nil {
+		a.standaloneWriter.enableBackingStore()
 	} else {
-		if !isFallbackWriter {
-			if reg, ok := writerFactory.(*absser.SerializationWriterFactoryRegistry); ok {
-				enableBackingStoreForWriterRegistry(reg)
+		switch wf := a.GetSerializationWriterFactory().(type) {
+		case *fallbackSerializationWriterFactory:
+			if wf != nil {
+				wf.backingStoreEnabled.Store(true)
+				enableBackingStoreForWriterRegistry(wf.primary)
+				enableBackingStoreForWriterRegistry(wf.fallback)
 			}
+		case *absser.SerializationWriterFactoryRegistry:
+			enableBackingStoreForWriterRegistry(wf)
 		}
-		if !isFallbackParse {
-			if reg, ok := parseFactory.(*absser.ParseNodeFactoryRegistry); ok {
-				enableBackingStoreForParseRegistry(reg)
+	}
+
+	if a.standaloneParser != nil {
+		a.standaloneParser.enableBackingStore()
+	} else {
+		switch pf := a.GetParseNodeFactory().(type) {
+		case *fallbackParseNodeFactory:
+			if pf != nil {
+				pf.backingStoreEnabled.Store(true)
+				enableBackingStoreForParseRegistry(pf.primary)
+				enableBackingStoreForParseRegistry(pf.fallback)
 			}
+		case *absser.ParseNodeFactoryRegistry:
+			enableBackingStoreForParseRegistry(pf)
 		}
 	}
 }
@@ -510,21 +538,27 @@ func needsLocalParseRegistry(reg *absser.ParseNodeFactoryRegistry) bool {
 
 var contentTypeVendorCleanupPattern = regexp.MustCompile(`[^/]+\+`)
 
-func hasValidFactory(reg *absser.SerializationWriterFactoryRegistry, contentType string) bool {
-	if reg == nil {
-		return false
+func lookupRegistryFactory[R sync.Locker, F any](
+	reg R,
+	contentType string,
+	getMap func(R) map[string]F,
+) (F, string, bool) {
+	var zero F
+	if isNilValue(reg) {
+		return zero, "", false
 	}
 	trimmed := strings.TrimSpace(contentType)
 	if trimmed == "" {
-		return false
+		return zero, "", false
 	}
 	vendorSpecificContentType := strings.TrimSpace(strings.Split(trimmed, ";")[0])
 	cleanedContentType := contentTypeVendorCleanupPattern.ReplaceAllString(vendorSpecificContentType, "")
 
 	reg.Lock()
 	defer reg.Unlock()
-	if reg.ContentTypeAssociatedFactories == nil {
-		return false
+	factories := getMap(reg)
+	if factories == nil {
+		return zero, "", false
 	}
 
 	for _, ct := range []string{
@@ -533,46 +567,116 @@ func hasValidFactory(reg *absser.SerializationWriterFactoryRegistry, contentType
 		cleanedContentType,
 		strings.ToLower(cleanedContentType),
 	} {
-		if fac, ok := reg.ContentTypeAssociatedFactories[ct]; ok {
-			return !isNilValue(fac)
+		if fac, ok := factories[ct]; ok {
+			if isNilValue(fac) {
+				return zero, "", false
+			}
+			return fac, ct, true
 		}
 	}
-	return false
+	return zero, "", false
 }
 
-func hasValidParseFactory(reg *absser.ParseNodeFactoryRegistry, contentType string) bool {
-	if reg == nil {
-		return false
-	}
-	trimmed := strings.TrimSpace(contentType)
-	if trimmed == "" {
-		return false
-	}
-	vendorSpecificContentType := strings.TrimSpace(strings.Split(trimmed, ";")[0])
-	cleanedContentType := contentTypeVendorCleanupPattern.ReplaceAllString(vendorSpecificContentType, "")
+type standaloneSerializationWriterFactory struct {
+	mu      sync.RWMutex
+	current absser.SerializationWriterFactory
+}
 
-	reg.Lock()
-	defer reg.Unlock()
-	if reg.ContentTypeAssociatedFactories == nil {
-		return false
-	}
+func newStandaloneSerializationWriterFactory(factory absser.SerializationWriterFactory) *standaloneSerializationWriterFactory {
+	return &standaloneSerializationWriterFactory{current: factory}
+}
 
-	for _, ct := range []string{
-		vendorSpecificContentType,
-		strings.ToLower(vendorSpecificContentType),
-		cleanedContentType,
-		strings.ToLower(cleanedContentType),
-	} {
-		if fac, ok := reg.ContentTypeAssociatedFactories[ct]; ok {
-			return !isNilValue(fac)
+func (s *standaloneSerializationWriterFactory) get() absser.SerializationWriterFactory {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.current
+}
+
+func (s *standaloneSerializationWriterFactory) enableBackingStore() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if !isNilValue(s.current) {
+		if _, ok := s.current.(*store.BackingStoreSerializationWriterProxyFactory); !ok {
+			s.current = store.NewBackingStoreSerializationWriterProxyFactory(s.current)
 		}
 	}
-	return false
+	s.mu.Unlock()
+	enableBackingStoreForWriterRegistry(absser.DefaultSerializationWriterFactoryInstance)
+}
+
+func (s *standaloneSerializationWriterFactory) GetValidContentType() (string, error) {
+	fac := s.get()
+	if isNilValue(fac) {
+		return "", errors.New("factory is nil")
+	}
+	return fac.GetValidContentType()
+}
+
+func (s *standaloneSerializationWriterFactory) GetSerializationWriter(contentType string) (absser.SerializationWriter, error) {
+	fac := s.get()
+	if isNilValue(fac) {
+		return nil, errors.New("factory is nil")
+	}
+	return fac.GetSerializationWriter(contentType)
+}
+
+type standaloneParseNodeFactory struct {
+	mu      sync.RWMutex
+	current absser.ParseNodeFactory
+}
+
+func newStandaloneParseNodeFactory(factory absser.ParseNodeFactory) *standaloneParseNodeFactory {
+	return &standaloneParseNodeFactory{current: factory}
+}
+
+func (s *standaloneParseNodeFactory) get() absser.ParseNodeFactory {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.current
+}
+
+func (s *standaloneParseNodeFactory) enableBackingStore() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if !isNilValue(s.current) {
+		if _, ok := s.current.(*store.BackingStoreParseNodeFactory); !ok {
+			s.current = store.NewBackingStoreParseNodeFactory(s.current)
+		}
+	}
+	s.mu.Unlock()
+	enableBackingStoreForParseRegistry(absser.DefaultParseNodeFactoryInstance)
+}
+
+func (s *standaloneParseNodeFactory) GetValidContentType() (string, error) {
+	fac := s.get()
+	if isNilValue(fac) {
+		return "", errors.New("factory is nil")
+	}
+	return fac.GetValidContentType()
+}
+
+func (s *standaloneParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
+	fac := s.get()
+	if isNilValue(fac) {
+		return nil, errors.New("factory is nil")
+	}
+	return fac.GetRootParseNode(contentType, content)
 }
 
 type fallbackSerializationWriterFactory struct {
-	primary  *absser.SerializationWriterFactoryRegistry
-	fallback *absser.SerializationWriterFactoryRegistry
+	primary             *absser.SerializationWriterFactoryRegistry
+	fallback            *absser.SerializationWriterFactoryRegistry
+	backingStoreEnabled atomic.Bool
 }
 
 func (f *fallbackSerializationWriterFactory) GetValidContentType() (string, error) {
@@ -580,8 +684,21 @@ func (f *fallbackSerializationWriterFactory) GetValidContentType() (string, erro
 }
 
 func (f *fallbackSerializationWriterFactory) GetSerializationWriter(contentType string) (absser.SerializationWriter, error) {
-	if f != nil && f.primary != nil && hasValidFactory(f.primary, contentType) {
-		return f.primary.GetSerializationWriter(contentType)
+	if f != nil && f.primary != nil {
+		if fac, resolvedCT, ok := lookupRegistryFactory(
+			f.primary,
+			contentType,
+			func(r *absser.SerializationWriterFactoryRegistry) map[string]absser.SerializationWriterFactory {
+				return r.ContentTypeAssociatedFactories
+			},
+		); ok {
+			if f.backingStoreEnabled.Load() {
+				if _, isProxy := fac.(*store.BackingStoreSerializationWriterProxyFactory); !isProxy {
+					fac = store.NewBackingStoreSerializationWriterProxyFactory(fac)
+				}
+			}
+			return fac.GetSerializationWriter(resolvedCT)
+		}
 	}
 	if f != nil && f.fallback != nil {
 		return f.fallback.GetSerializationWriter(contentType)
@@ -604,8 +721,9 @@ func (f *fallbackSerializationWriterFactory) GetFallback() *absser.Serialization
 }
 
 type fallbackParseNodeFactory struct {
-	primary  *absser.ParseNodeFactoryRegistry
-	fallback *absser.ParseNodeFactoryRegistry
+	primary             *absser.ParseNodeFactoryRegistry
+	fallback            *absser.ParseNodeFactoryRegistry
+	backingStoreEnabled atomic.Bool
 }
 
 func (f *fallbackParseNodeFactory) GetValidContentType() (string, error) {
@@ -613,8 +731,24 @@ func (f *fallbackParseNodeFactory) GetValidContentType() (string, error) {
 }
 
 func (f *fallbackParseNodeFactory) GetRootParseNode(contentType string, content []byte) (absser.ParseNode, error) {
-	if f != nil && f.primary != nil && hasValidParseFactory(f.primary, contentType) {
-		return f.primary.GetRootParseNode(contentType, content)
+	if f != nil && f.primary != nil {
+		if fac, resolvedCT, ok := lookupRegistryFactory(
+			f.primary,
+			contentType,
+			func(r *absser.ParseNodeFactoryRegistry) map[string]absser.ParseNodeFactory {
+				return r.ContentTypeAssociatedFactories
+			},
+		); ok {
+			if content == nil {
+				return nil, errors.New("content is required")
+			}
+			if f.backingStoreEnabled.Load() {
+				if _, isProxy := fac.(*store.BackingStoreParseNodeFactory); !isProxy {
+					fac = store.NewBackingStoreParseNodeFactory(fac)
+				}
+			}
+			return fac.GetRootParseNode(resolvedCT, content)
+		}
 	}
 	if f != nil && f.fallback != nil {
 		return f.fallback.GetRootParseNode(contentType, content)
